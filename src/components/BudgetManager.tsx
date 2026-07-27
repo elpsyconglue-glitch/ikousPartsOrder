@@ -276,9 +276,9 @@ export default function BudgetManager({
   };
 
   return (
-    <div className="space-y-6 print:hidden">
+    <div className="space-y-6">
       {/* 画面ヘッダー情報 */}
-      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-2xl p-6 text-white shadow-xl border border-slate-800">
+      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-2xl p-6 text-white shadow-xl border border-slate-800 print:hidden">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-1.5">
@@ -321,8 +321,10 @@ export default function BudgetManager({
         </div>
       </div>
 
-      {/* 1. 船の選択一覧カード */}
-      <div>
+      {/* 画面用UIコンテナ（印刷時は非表示） */}
+      <div className="space-y-6 print:hidden">
+        {/* 1. 船の選択一覧カード */}
+        <div>
         <div className="flex items-center justify-between mb-2.5">
           <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
             <Layers className="h-4 w-4 text-indigo-600" />
@@ -673,6 +675,7 @@ export default function BudgetManager({
           )}
         </div>
       </div>
+      </div>
 
       {/* 印刷・PDF表示用モーダル (ダイアログ) */}
       {showPrintModal && (
@@ -683,17 +686,29 @@ export default function BudgetManager({
             @media print {
               @page {
                 size: A4 portrait;
-                margin: 8mm 10mm;
+                margin: 10mm 8mm 10mm 8mm;
               }
 
               /* 画面上部ヘッダーや操作パネル、モーダル以外の画面領域を印刷非表示 */
-              header, nav, .print\\:hidden {
+              header, nav, footer, .print\\:hidden {
                 display: none !important;
+              }
+
+              /* html, body, #root のスクロール・高さ・固定制限解除 */
+              html, body, #root {
+                background: #ffffff !important;
+                color: #000000 !important;
+                height: auto !important;
+                min-height: 0 !important;
+                overflow: visible !important;
+                margin: 0 !important;
+                padding: 0 !important;
               }
 
               /* モーダル背景・外枠のリセット */
               .budget-print-modal-overlay {
                 position: static !important;
+                display: block !important;
                 background: none !important;
                 padding: 0 !important;
                 margin: 0 !important;
@@ -705,6 +720,7 @@ export default function BudgetManager({
 
               .budget-print-modal-container {
                 position: static !important;
+                display: block !important;
                 max-width: none !important;
                 max-height: none !important;
                 box-shadow: none !important;
@@ -712,6 +728,7 @@ export default function BudgetManager({
                 padding: 0 !important;
                 margin: 0 !important;
                 width: 100% !important;
+                height: auto !important;
                 overflow: visible !important;
               }
 
@@ -719,21 +736,27 @@ export default function BudgetManager({
                 display: block !important;
                 position: static !important;
                 width: 100% !important;
+                height: auto !important;
                 margin: 0 !important;
                 padding: 0 !important;
                 border: none !important;
                 box-shadow: none !important;
                 background: white !important;
                 color: black !important;
+                overflow: visible !important;
               }
 
               table {
                 width: 100% !important;
                 border-collapse: collapse !important;
+                page-break-inside: auto !important;
               }
+
               tr {
                 page-break-inside: avoid !important;
+                break-inside: avoid !important;
               }
+
               thead {
                 display: table-header-group !important;
               }
