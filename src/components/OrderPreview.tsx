@@ -447,11 +447,10 @@ export default function OrderPreview({ header, items, histories, onHistoriesChan
             margin: 0 !important;
             width: 100% !important;
             max-width: none !important;
-            height: 275mm !important;
-            max-height: 275mm !important;
-            overflow: hidden !important;
+            min-height: 0 !important;
             background: transparent !important;
             box-sizing: border-box !important;
+            overflow: visible !important;
           }
           .order-sheet-page:last-child {
             page-break-after: avoid !important;

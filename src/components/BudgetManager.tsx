@@ -680,7 +680,7 @@ export default function BudgetManager({
           <style>{`
             @media print {
               @page {
-                size: A4 landscape;
+                size: A4 portrait;
                 margin: 8mm 10mm;
               }
               body * {
@@ -700,6 +700,7 @@ export default function BudgetManager({
                 border: none !important;
                 background: white !important;
                 color: black !important;
+                overflow: visible !important;
               }
             }
           `}</style>
