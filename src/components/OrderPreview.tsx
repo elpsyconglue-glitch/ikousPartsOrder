@@ -194,7 +194,7 @@ export default function OrderPreview({ header, items, histories, onHistoriesChan
       </div>
 
       {/* メーカー・分類別の発注書プレビューエリア */}
-      <div className="space-y-8 print:space-y-0">
+      <div id="order-preview-print-area" className="space-y-8 print:space-y-0">
         {orderGroups.map((group, groupIndex) => {
           const mfg = group.manufacturer;
           const category = group.category;
@@ -216,15 +216,15 @@ export default function OrderPreview({ header, items, histories, onHistoriesChan
           const displayEquipment = uniqueEquipments.length > 0 ? uniqueEquipments.join(' / ') : '';
           const displayModel = uniqueModels.length > 0 ? uniqueModels.join(' / ') : '';
 
-          // PDFの用紙の合計行数を再現（A4 1枚に完璧に収まるよう14行に調整）
-          const TOTAL_ROWS = 14;
+          // PDFの用紙の合計行数を再現（A4 1枚に完璧に収まるよう12行に調整）
+          const TOTAL_ROWS = 12;
           const emptyRowsCount = Math.max(0, TOTAL_ROWS - mfgItems.length);
           const emptyRows = Array.from({ length: emptyRowsCount });
 
           return (
             <div 
               key={group.key} 
-              className="bg-white rounded-xl border border-slate-300 shadow-md p-6 max-w-[840px] mx-auto relative overflow-hidden print:shadow-none print:border-none print:p-0 print:m-0 print:rounded-none print:max-w-none print:bg-transparent page-break"
+              className="bg-white rounded-xl border border-slate-300 shadow-md p-6 max-w-[840px] mx-auto relative overflow-hidden print:shadow-none print:border-none print:p-0 print:m-0 print:rounded-none print:max-w-none print:bg-transparent page-break order-sheet-page"
               style={{ 
                 pageBreakAfter: groupIndex < orderGroups.length - 1 ? 'always' : 'avoid',
                 breakAfter: groupIndex < orderGroups.length - 1 ? 'page' : 'avoid'
@@ -415,34 +415,45 @@ export default function OrderPreview({ header, items, histories, onHistoriesChan
         @media print {
           @page {
             size: A4 portrait;
-            margin: 8mm 10mm;
+            margin: 6mm 8mm;
           }
-          body {
-            background: white !important;
-            color: black !important;
+          body * {
+            visibility: hidden !important;
+          }
+          #order-preview-print-area, #order-preview-print-area * {
+            visibility: visible !important;
+          }
+          #order-preview-print-area {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
             margin: 0 !important;
             padding: 0 !important;
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
+            background: white !important;
           }
           .print\\:hidden {
             display: none !important;
           }
           /* 改ページの設定 */
-          .page-break {
-            page-break-after: always;
-            break-after: page;
+          .order-sheet-page {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+            page-break-after: always !important;
+            break-after: page !important;
             border: none !important;
             box-shadow: none !important;
             padding: 0 !important;
             margin: 0 !important;
             width: 100% !important;
             max-width: none !important;
-            min-height: 0 !important;
+            height: 275mm !important;
+            max-height: 275mm !important;
+            overflow: hidden !important;
             background: transparent !important;
-            overflow: visible !important;
+            box-sizing: border-box !important;
           }
-          .page-break:last-child {
+          .order-sheet-page:last-child {
             page-break-after: avoid !important;
             break-after: avoid !important;
           }
