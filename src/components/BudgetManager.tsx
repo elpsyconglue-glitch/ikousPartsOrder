@@ -99,26 +99,32 @@ export default function BudgetManager({
     remark: ''
   });
 
+  // 船別・予算発注履歴の対象データ：発注日(orderDate)が存在する「実際の入力・発注実績レコード」のみを抽出
+  // (※CSVインポートした未発注のパーツマスタデータは自動除外)
+  const actualOrders = useMemo(() => {
+    return histories.filter(h => Boolean(h.orderDate && h.orderDate.trim() !== ''));
+  }, [histories]);
+
   // 保存されている全履歴から存在する「年度」のリストを抽出（現在の年度を含む）
   const availableYears = useMemo(() => {
     const currentFY = getFiscalYear();
     const yearsSet = new Set<number>([currentFY, currentFY - 1, currentFY - 2]);
     
-    histories.forEach(h => {
+    actualOrders.forEach(h => {
       if (h.orderDate) {
         yearsSet.add(getFiscalYear(h.orderDate));
       }
     });
 
     return Array.from(yearsSet).sort((a, b) => b - a);
-  }, [histories]);
+  }, [actualOrders]);
 
   // 管理船舶それぞれにおける「当年度の発注合計額」を算出（サマリー表示用）
   const shipSummaries = useMemo(() => {
     const map: { [shipName: string]: number } = {};
     activeShipNames.forEach(name => { map[name] = 0; });
 
-    histories.forEach(h => {
+    actualOrders.forEach(h => {
       const ship = h.shipName;
       if (!ship || ship === '未指定') return;
       const qty = h.quantity || 1;
@@ -133,11 +139,11 @@ export default function BudgetManager({
     });
 
     return map;
-  }, [histories]);
+  }, [actualOrders, activeShipNames]);
 
   // 選択された「船」「カテゴリ」「年度」に該当する発注履歴一覧を抽出
   const filteredHistories = useMemo(() => {
-    return histories.filter(h => {
+    return actualOrders.filter(h => {
       // 船名のマッチ
       const shipMatch = h.shipName === selectedShip || (selectedShip === '未指定' && (!h.shipName || h.shipName === '未指定'));
       if (!shipMatch) return false;
@@ -171,7 +177,7 @@ export default function BudgetManager({
 
       return true;
     });
-  }, [histories, selectedShip, selectedCategory, selectedYear, selectedMonth]);
+  }, [actualOrders, selectedShip, selectedCategory, selectedYear, selectedMonth]);
 
   // フィルタリング後の合計金額
   const categoryTotalAmount = useMemo(() => {
@@ -258,6 +264,21 @@ export default function BudgetManager({
     });
   };
 
+  // 未発注のCSVマスタデータを発注履歴データベースから削除
+  const handleCleanUnorderedMasterData = () => {
+    const unorderedCount = histories.filter(h => !h.orderDate || h.orderDate.trim() === '').length;
+    if (unorderedCount === 0) {
+      alert('未発注のCSVマスタデータはありません。（すべてのデータに発注日が存在します）');
+      return;
+    }
+    if (confirm(`CSV等で取り込まれた未発注のマスタデータ（合計 ${unorderedCount} 件）をデータベースから完全に削除しますか？\n（発注書作成時または本画面で手動入力された発注実績データのみが保持されます）`)) {
+      const onlyOrders = histories.filter(h => Boolean(h.orderDate && h.orderDate.trim() !== ''));
+      savePartHistories(onlyOrders);
+      onHistoriesChange(onlyOrders);
+      alert(`${unorderedCount}件の未発注マスタデータを削除しました。`);
+    }
+  };
+
   // 予算データの全削除
   const handleClearAll = () => {
     setShowClearAllModal(true);
@@ -291,7 +312,7 @@ export default function BudgetManager({
               船別・年度別 発注履歴＆予算集計
             </h2>
             <p className="text-xs text-slate-300 mt-1 max-w-2xl">
-              管理船舶別に「部品・船用品・潤滑油・廃油処理」の発注実績を自動集計。後から確定金額を入力すると次回注文時の自動保管に即時学習・反映されます。
+              管理船舶別に「部品・船用品・潤滑油・廃油処理」の発注実績を自動集計。発注書作成時または本画面で登録されたデータのみが集計・表示されます（CSVから取り込まれた単なる部品単価マスタデータは自動除外されます）。
             </p>
           </div>
 
@@ -454,6 +475,16 @@ export default function BudgetManager({
             </button>
 
             <button
+              onClick={handleCleanUnorderedMasterData}
+              type="button"
+              className="inline-flex items-center gap-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-bold px-3 py-2 rounded-lg transition-colors cursor-pointer shadow-sm"
+              title="CSV等で取り込んだ未発注のマスタデータを完全に消去・除外します"
+            >
+              <Trash2 className="h-3.5 w-3.5 text-amber-600" />
+              未発注マスタ消去
+            </button>
+
+            <button
               onClick={handleClearAll}
               type="button"
               className="inline-flex items-center gap-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold px-3 py-2 rounded-lg transition-colors cursor-pointer shadow-sm"
@@ -469,7 +500,7 @@ export default function BudgetManager({
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
           {(['部品', '船用品', '潤滑油', '廃油処理'] as OrderCategory[]).map(cat => {
             const isCatSelected = selectedCategory === cat;
-            const catCount = histories.filter(h => {
+            const catCount = actualOrders.filter(h => {
               const shipMatch = h.shipName === selectedShip || (selectedShip === '未指定' && (!h.shipName || h.shipName === '未指定'));
               if (!shipMatch) return false;
               if ((h.category || '部品') !== cat) return false;
