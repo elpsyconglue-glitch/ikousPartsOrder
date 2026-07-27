@@ -9,12 +9,13 @@ import {
   CheckCircle2, 
   Clock, 
   RefreshCw, 
-  HelpCircle, 
   Building2, 
   ArrowRight,
   AlertTriangle,
   Lock,
-  UserCheck
+  UserCheck,
+  UserPlus,
+  LogIn
 } from 'lucide-react';
 
 export default function LoginModal() {
@@ -23,14 +24,20 @@ export default function LoginModal() {
     pendingVerification, 
     sendVerificationCode, 
     verifyCodeAndLogin, 
+    signUpWithFirebase,
+    signInWithFirebase,
+    sendPasswordReset,
     isAccountExpired, 
-    daysUntilExpiration,
-    logout 
   } = useAuth();
 
+  // モード選択
+  const [authMode, setAuthMode] = useState<'signin' | 'signup' | 'otp' | 'reset'>('signin');
+
   // 入力フォーム状態
-  const [emailInput, setEmailInput] = useState<string>(user?.email || 'yamada@ikous.co.jp');
-  const [nameInput, setNameInput] = useState<string>(user?.name || STAFF_LIST[0]);
+  const [emailInput, setEmailInput] = useState<string>(user?.email || '');
+  const [passwordInput, setPasswordInput] = useState<string>('');
+  const [nameInput, setNameInput] = useState<string>(user?.name || '');
+  const [departmentInput, setDepartmentInput] = useState<string>('株式会社イコーズ 工務部');
   const [codeInput, setCodeInput] = useState<string>('');
   
   // UI メッセージ・状態
@@ -40,7 +47,67 @@ export default function LoginModal() {
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [showGuideModal, setShowGuideModal] = useState<boolean>(false);
 
-  // コード送信処理
+  // 1. Firebase 新規アカウント作成
+  const handleFirebaseSignUp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setStatusMessage(null);
+    setIsSubmitting(true);
+
+    try {
+      const res = await signUpWithFirebase(emailInput, passwordInput, nameInput, departmentInput);
+      if (res.success) {
+        setStatusMessage({ type: 'success', text: res.message });
+      } else {
+        setStatusMessage({ type: 'error', text: res.message });
+      }
+    } catch {
+      setStatusMessage({ type: 'error', text: 'アカウント登録中にエラーが発生しました。' });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // 2. Firebase ログイン
+  const handleFirebaseSignIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setStatusMessage(null);
+    setIsSubmitting(true);
+
+    try {
+      const res = await signInWithFirebase(emailInput, passwordInput);
+      if (res.success) {
+        setStatusMessage({ type: 'success', text: res.message });
+      } else {
+        setStatusMessage({ type: 'error', text: res.message });
+      }
+    } catch {
+      setStatusMessage({ type: 'error', text: 'ログイン処理中にエラーが発生しました。' });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // 3. パスワード再設定メール送信
+  const handlePasswordReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setStatusMessage(null);
+    setIsSubmitting(true);
+
+    try {
+      const res = await sendPasswordReset(emailInput);
+      if (res.success) {
+        setStatusMessage({ type: 'success', text: res.message });
+      } else {
+        setStatusMessage({ type: 'error', text: res.message });
+      }
+    } catch {
+      setStatusMessage({ type: 'error', text: 'パスワード再設定メールの送信に失敗しました。' });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // 4. ワンタイムコード送信処理（デモ・簡易ログイン用）
   const handleSendCode = async (e: React.FormEvent) => {
     e.preventDefault();
     setStatusMessage(null);
@@ -64,7 +131,7 @@ export default function LoginModal() {
     }
   };
 
-  // コード検証・ログイン処理
+  // ワンタイムコード検証・ログイン処理
   const handleVerifyCode = (e: React.FormEvent) => {
     e.preventDefault();
     if (!codeInput) {
@@ -108,8 +175,48 @@ export default function LoginModal() {
           </h2>
           <p className="text-xs text-indigo-200 mt-1 flex items-center justify-center gap-1.5">
             <Lock className="h-3.5 w-3.5 text-emerald-400" />
-            <span>社内メールアドレス認証 （1年間有効・年次自動更新型）</span>
+            <span>リアルメールアドレス認証 / アカウント管理</span>
           </p>
+        </div>
+
+        {/* 認証モード切り替えタブ */}
+        <div className="flex border-b border-slate-200 bg-slate-50 text-xs font-bold text-slate-600">
+          <button
+            type="button"
+            onClick={() => { setAuthMode('signin'); setStatusMessage(null); }}
+            className={`flex-1 py-3 px-2 flex items-center justify-center gap-1.5 border-b-2 transition-all cursor-pointer ${
+              authMode === 'signin'
+                ? 'border-indigo-600 text-indigo-600 bg-white'
+                : 'border-transparent hover:bg-slate-100'
+            }`}
+          >
+            <LogIn className="h-4 w-4" />
+            <span>ログイン</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => { setAuthMode('signup'); setStatusMessage(null); }}
+            className={`flex-1 py-3 px-2 flex items-center justify-center gap-1.5 border-b-2 transition-all cursor-pointer ${
+              authMode === 'signup'
+                ? 'border-indigo-600 text-indigo-600 bg-white'
+                : 'border-transparent hover:bg-slate-100'
+            }`}
+          >
+            <UserPlus className="h-4 w-4 text-emerald-600" />
+            <span>新規アカウント作成</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => { setAuthMode('otp'); setStatusMessage(null); }}
+            className={`flex-1 py-3 px-2 flex items-center justify-center gap-1.5 border-b-2 transition-all cursor-pointer ${
+              authMode === 'otp'
+                ? 'border-indigo-600 text-indigo-600 bg-white'
+                : 'border-transparent hover:bg-slate-100 text-slate-500'
+            }`}
+          >
+            <KeyRound className="h-4 w-4 text-amber-600" />
+            <span>コード簡易認証</span>
+          </button>
         </div>
 
         {/* 1年経過（アカウント認証期限切れ）警告 */}
@@ -123,14 +230,14 @@ export default function LoginModal() {
                 </p>
                 <p className="mt-1 leading-relaxed">
                   アカウント（<span className="font-bold">{user.email}</span>）の1年間の認証有効期限が終了しました。
-                  社内セキュリティ維持のため、再度メール認証コードを入力してアカウント有効期限を1年間更新してください。
+                  パスワードまたは認証コードでログインし、有効期限を更新してください。
                 </p>
               </div>
             </div>
           </div>
         )}
 
-        <div className="p-7 space-y-6">
+        <div className="p-7 space-y-5">
 
           {/* 通知メッセージ */}
           {statusMessage && (
@@ -148,61 +255,48 @@ export default function LoginModal() {
             </div>
           )}
 
-          {/* ステップ1：メールアドレス・担当者名入力 */}
-          {step === 'email' && (
-            <form onSubmit={handleSendCode} className="space-y-4">
+          {/* 1. ログインモード (メール & パスワード) */}
+          {authMode === 'signin' && (
+            <form onSubmit={handleFirebaseSignIn} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
                   <Mail className="h-4 w-4 text-indigo-600" />
-                  <span>会社メールアドレス</span>
+                  <span>メールアドレス</span>
                   <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="email"
                   required
-                  placeholder="yamada@ikous.co.jp"
+                  placeholder="yourname@ikous.co.jp"
                   value={emailInput}
                   onChange={e => setEmailInput(e.target.value)}
-                  className="w-full text-xs font-semibold px-3.5 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all bg-slate-50 focus:bg-white"
+                  className="w-full text-xs font-semibold px-3.5 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 bg-slate-50 focus:bg-white"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
-                  <UserCheck className="h-4 w-4 text-indigo-600" />
-                  <span>お名前（担当者名）</span>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <Lock className="h-4 w-4 text-indigo-600" />
+                    <span>パスワード</span>
+                    <span className="text-rose-500">*</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => { setAuthMode('reset'); setStatusMessage(null); }}
+                    className="text-[11px] text-indigo-600 hover:underline font-semibold"
+                  >
+                    パスワードをお忘れですか？
+                  </button>
                 </label>
                 <input
-                  type="text"
+                  type="password"
                   required
-                  placeholder="山田 太郎"
-                  value={nameInput}
-                  onChange={e => setNameInput(e.target.value)}
-                  className="w-full text-xs font-semibold px-3.5 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all bg-slate-50 focus:bg-white"
+                  placeholder="••••••••"
+                  value={passwordInput}
+                  onChange={e => setPasswordInput(e.target.value)}
+                  className="w-full text-xs font-semibold px-3.5 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 bg-slate-50 focus:bg-white"
                 />
-              </div>
-
-              {/* 担当者プリセットクイックボタン */}
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-500 mb-1">
-                  社内担当者サンプル選択:
-                </label>
-                <div className="flex flex-wrap gap-1.5">
-                  {STAFF_LIST.slice(0, 5).map(staff => (
-                    <button
-                      key={staff}
-                      type="button"
-                      onClick={() => handleSelectPresetStaff(staff)}
-                      className={`text-[11px] px-2.5 py-1 rounded-lg border transition-colors cursor-pointer ${
-                        nameInput === staff 
-                          ? 'bg-indigo-600 text-white border-indigo-600 font-bold' 
-                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border-slate-200'
-                      }`}
-                    >
-                      {staff}
-                    </button>
-                  ))}
-                </div>
               </div>
 
               <div className="pt-2">
@@ -211,78 +305,274 @@ export default function LoginModal() {
                   disabled={isSubmitting}
                   className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-xl transition-all shadow-md hover:shadow-indigo-500/20 text-xs cursor-pointer disabled:opacity-50"
                 >
-                  <Mail className="h-4 w-4" />
-                  <span>{isAccountExpired ? '年次再認証コードを送信' : '認証コードをメール送信（1年間有効開通）'}</span>
+                  <LogIn className="h-4 w-4" />
+                  <span>ログイン</span>
                   <ArrowRight className="h-4 w-4" />
                 </button>
               </div>
             </form>
           )}
 
-          {/* ステップ2：ワンタイムコード入力 */}
-          {step === 'code' && (
-            <form onSubmit={handleVerifyCode} className="space-y-4">
-              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs space-y-1">
-                <p className="text-slate-600">
-                  送信先アドレス: <span className="font-bold text-slate-900">{emailInput}</span>
-                </p>
-                <p className="text-slate-500 text-[11px]">
-                  ※ 認証完了後、本アカウントで <strong>1年間（365日）</strong> そのままログイン継続できます。
-                </p>
+          {/* 2. 新規アカウント作成モード */}
+          {authMode === 'signup' && (
+            <form onSubmit={handleFirebaseSignUp} className="space-y-4">
+              <div className="bg-indigo-50 border border-indigo-200 p-3 rounded-xl text-xs text-indigo-900 leading-relaxed">
+                💡 <strong>ご自身のメールアドレスで実際のFirebaseアカウントを開通できます。</strong>
+                登録したアカウント情報はクラウドデータベースに安全に保護されます。
               </div>
-
-              {/* デモ環境用ワンタイムコード表示カード */}
-              {demoCodeNotice && (
-                <div className="bg-amber-50 border border-amber-300 p-3 rounded-xl flex items-center justify-between">
-                  <div>
-                    <p className="text-[11px] font-bold text-amber-900">【テスト用確認コード】</p>
-                    <p className="text-lg font-mono font-extrabold text-amber-900 tracking-widest mt-0.5">
-                      {demoCodeNotice}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleAutoFillDemoCode}
-                    className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg shadow-xs transition-colors cursor-pointer"
-                  >
-                    コードを自動入力
-                  </button>
-                </div>
-              )}
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
-                  <KeyRound className="h-4 w-4 text-indigo-600" />
-                  <span>6桁のワンタイム認証コード</span>
+                  <Mail className="h-4 w-4 text-indigo-600" />
+                  <span>メールアドレス</span>
+                  <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="email"
+                  required
+                  placeholder="yourname@ikous.co.jp"
+                  value={emailInput}
+                  onChange={e => setEmailInput(e.target.value)}
+                  className="w-full text-xs font-semibold px-3.5 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 bg-slate-50 focus:bg-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
+                  <Lock className="h-4 w-4 text-indigo-600" />
+                  <span>パスワード (6文字以上)</span>
+                  <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="password"
+                  required
+                  minLength={6}
+                  placeholder="6文字以上で設定"
+                  value={passwordInput}
+                  onChange={e => setPasswordInput(e.target.value)}
+                  className="w-full text-xs font-semibold px-3.5 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 bg-slate-50 focus:bg-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
+                  <UserCheck className="h-4 w-4 text-indigo-600" />
+                  <span>お名前（氏名）</span>
+                  <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="text"
                   required
-                  maxLength={6}
-                  placeholder="123456"
-                  value={codeInput}
-                  onChange={e => setCodeInput(e.target.value)}
-                  className="w-full text-center text-lg font-mono tracking-widest font-extrabold py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 bg-white"
+                  placeholder="例: 大野 隆太"
+                  value={nameInput}
+                  onChange={e => setNameInput(e.target.value)}
+                  className="w-full text-xs font-semibold px-3.5 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 bg-slate-50 focus:bg-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
+                  <Building2 className="h-4 w-4 text-indigo-600" />
+                  <span>部署名</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="株式会社イコーズ 工務部"
+                  value={departmentInput}
+                  onChange={e => setDepartmentInput(e.target.value)}
+                  className="w-full text-xs font-semibold px-3.5 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 bg-slate-50 focus:bg-white"
+                />
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-6 rounded-xl transition-all shadow-md text-xs cursor-pointer disabled:opacity-50"
+                >
+                  <UserPlus className="h-4 w-4" />
+                  <span>新規アカウントを作成してログイン</span>
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* 3. パスワード再設定モード */}
+          {authMode === 'reset' && (
+            <form onSubmit={handlePasswordReset} className="space-y-4">
+              <div className="text-xs text-slate-600">
+                ご登録のメールアドレスを入力してください。パスワード再設定用のリンクをメールでお送りします。
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
+                  <Mail className="h-4 w-4 text-indigo-600" />
+                  <span>メールアドレス</span>
+                  <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="email"
+                  required
+                  placeholder="yourname@ikous.co.jp"
+                  value={emailInput}
+                  onChange={e => setEmailInput(e.target.value)}
+                  className="w-full text-xs font-semibold px-3.5 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 bg-slate-50 focus:bg-white"
                 />
               </div>
 
               <div className="flex gap-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => setStep('email')}
+                  onClick={() => { setAuthMode('signin'); setStatusMessage(null); }}
                   className="flex-1 py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-colors cursor-pointer"
                 >
                   戻る
                 </button>
                 <button
                   type="submit"
-                  className="flex-[2] py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition-colors shadow-md cursor-pointer flex items-center justify-center gap-2"
+                  disabled={isSubmitting}
+                  className="flex-[2] py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl transition-colors shadow-md cursor-pointer disabled:opacity-50"
                 >
-                  <CheckCircle2 className="h-4 w-4" />
-                  <span>{isAccountExpired ? '年次認証を更新する' : '認証完了・ログイン'}</span>
+                  再設定メールを送信
                 </button>
               </div>
             </form>
+          )}
+
+          {/* 4. ワンタイムコード・デモ簡易認証モード */}
+          {authMode === 'otp' && (
+            <div>
+              {step === 'email' && (
+                <form onSubmit={handleSendCode} className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
+                      <Mail className="h-4 w-4 text-indigo-600" />
+                      <span>会社メールアドレス</span>
+                      <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      placeholder="yamada@ikous.co.jp"
+                      value={emailInput}
+                      onChange={e => setEmailInput(e.target.value)}
+                      className="w-full text-xs font-semibold px-3.5 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 bg-slate-50 focus:bg-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
+                      <UserCheck className="h-4 w-4 text-indigo-600" />
+                      <span>お名前（担当者名）</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="山田 太郎"
+                      value={nameInput}
+                      onChange={e => setNameInput(e.target.value)}
+                      className="w-full text-xs font-semibold px-3.5 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 bg-slate-50 focus:bg-white"
+                    />
+                  </div>
+
+                  {/* 担当者プリセット */}
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+                      社内サンプル担当者クイック選択:
+                    </label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {STAFF_LIST.slice(0, 5).map(staff => (
+                        <button
+                          key={staff}
+                          type="button"
+                          onClick={() => handleSelectPresetStaff(staff)}
+                          className={`text-[11px] px-2.5 py-1 rounded-lg border transition-colors cursor-pointer ${
+                            nameInput === staff 
+                              ? 'bg-indigo-600 text-white border-indigo-600 font-bold' 
+                              : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border-slate-200'
+                          }`}
+                        >
+                          {staff}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="pt-2">
+                    <button
+                      type="submit"
+                      disabled={isSubmitting}
+                      className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-xl transition-all shadow-md text-xs cursor-pointer disabled:opacity-50"
+                    >
+                      <Mail className="h-4 w-4" />
+                      <span>ワンタイムコードを送信</span>
+                      <ArrowRight className="h-4 w-4" />
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {step === 'code' && (
+                <form onSubmit={handleVerifyCode} className="space-y-4">
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs space-y-1">
+                    <p className="text-slate-600">
+                      送信先アドレス: <span className="font-bold text-slate-900">{emailInput}</span>
+                    </p>
+                  </div>
+
+                  {demoCodeNotice && (
+                    <div className="bg-amber-50 border border-amber-300 p-3 rounded-xl flex items-center justify-between">
+                      <div>
+                        <p className="text-[11px] font-bold text-amber-900">【確認用コード】</p>
+                        <p className="text-lg font-mono font-extrabold text-amber-900 tracking-widest mt-0.5">
+                          {demoCodeNotice}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleAutoFillDemoCode}
+                        className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer"
+                      >
+                        自動入力
+                      </button>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
+                      <KeyRound className="h-4 w-4 text-indigo-600" />
+                      <span>6桁のワンタイム認証コード</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      maxLength={6}
+                      placeholder="123456"
+                      value={codeInput}
+                      onChange={e => setCodeInput(e.target.value)}
+                      className="w-full text-center text-lg font-mono tracking-widest font-extrabold py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 bg-white"
+                    />
+                  </div>
+
+                  <div className="flex gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setStep('email')}
+                      className="flex-1 py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-colors cursor-pointer"
+                    >
+                      戻る
+                    </button>
+                    <button
+                      type="submit"
+                      className="flex-[2] py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition-colors shadow-md cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      <CheckCircle2 className="h-4 w-4" />
+                      <span>認証完了・ログイン</span>
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
           )}
 
           {/* 1年更新ルール・ガイドライン */}
@@ -294,7 +584,7 @@ export default function LoginModal() {
             >
               <span className="flex items-center gap-2 font-semibold">
                 <Clock className="h-4 w-4 text-indigo-600" />
-                メール認証と1年毎の年次再認証ルールについて
+                アカウント認証仕様と1年周期再認証ルール
               </span>
               <span className="text-[11px] underline">説明を見る</span>
             </button>
@@ -304,8 +594,8 @@ export default function LoginModal() {
 
         {/* フッター */}
         <div className="bg-slate-100 px-6 py-3 text-center text-[11px] text-slate-500 border-t border-slate-200 flex items-center justify-between">
-          <span>🔒 株式会社イコーズ 社内専用認証</span>
-          <span className="font-semibold text-slate-600">有効期限: 開通より1年間</span>
+          <span>🔒 株式会社イコーズ クラウド認証システム</span>
+          <span className="font-semibold text-slate-600">Firebase セキュリティ統合</span>
         </div>
 
       </div>
@@ -317,11 +607,11 @@ export default function LoginModal() {
             <div className="flex items-center justify-between border-b pb-3">
               <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
                 <Building2 className="h-5 w-5 text-indigo-600" />
-                メール認証 ＆ 1年周期再認証システム解説
+                Firebase認証 ＆ 年次アカウント管理解説
               </h3>
               <button
                 onClick={() => setShowGuideModal(false)}
-                className="text-slate-400 hover:text-slate-600 text-xs font-bold"
+                className="text-slate-400 hover:text-slate-600 text-xs font-bold cursor-pointer"
               >
                 閉じる
               </button>
@@ -331,22 +621,21 @@ export default function LoginModal() {
               <div className="bg-indigo-50 border border-indigo-200 p-3.5 rounded-xl space-y-1">
                 <h4 className="font-bold text-indigo-900 flex items-center gap-1.5">
                   <Clock className="h-4 w-4 text-indigo-600" />
-                  1年ごとのアカウント更新仕様
+                  リアルメールアカウント機能
                 </h4>
                 <p>
-                  一度メール認証を通過すると、アカウント開通日から <strong>365日間</strong> はパスワード入力等なしでシステムを利用可能です。
+                  ご自身のメールアドレスとパスワードでアカウントを作成・保持できます。登録情報はFirebase Auth & Firestoreクラウドデータベースに同期されます。
                 </p>
               </div>
 
               <div className="space-y-1.5">
                 <h4 className="font-bold text-slate-900 border-l-4 border-indigo-600 pl-2">
-                  運用手順
+                  主なポイント
                 </h4>
                 <ul className="list-disc list-inside space-y-1 pl-1 text-slate-600">
-                  <li><strong>初回登録（開通）:</strong> 会社のメールアドレスを入力し、届いたワンタイム認証コードを入力することで開通完了。</li>
-                  <li><strong>日常運用:</strong> 同じ端末・ブラウザからはログイン状態が維持されます（手動ログアウトも可能）。</li>
-                  <li><strong>1年毎の更新:</strong> 1年が経過すると自動的に「年次更新認証画面」に切り替わります。再度メール認証コードを入力すれば、次の1年間有効期限が延期されます。</li>
-                  <li><strong>安全対策:</strong> 退職者や異動者が発生した場合でも、メールアドレスが利用不可になっていれば1年更新のコードが受信できないため、自動的にアクセスが遮断されます。</li>
+                  <li><strong>新規アカウント作成:</strong> 「新規アカウント作成」タブからリアルなメールアドレスとパスワードを設定してご自身のアカウントを作成できます。</li>
+                  <li><strong>ログイン:</strong> 登録したメールアドレスとパスワードで安全にログインできます。</li>
+                  <li><strong>安全対策:</strong> 退職者や無効化対象のアカウントは、管理者画面から瞬時に停止処理が可能です。</li>
                 </ul>
               </div>
             </div>
@@ -366,3 +655,4 @@ export default function LoginModal() {
     </div>
   );
 }
+

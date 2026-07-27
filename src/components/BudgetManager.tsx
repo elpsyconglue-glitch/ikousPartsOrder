@@ -674,8 +674,37 @@ export default function BudgetManager({
 
       {/* 印刷・PDF表示用モーダル (ダイアログ) */}
       {showPrintModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full p-6 space-y-6 max-h-[90vh] overflow-y-auto print:max-h-none print:shadow-none print:p-0 print:rounded-none">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto print:p-0 print:bg-transparent print:static print:block">
+          
+          {/* 印刷専用スタイル定義 */}
+          <style>{`
+            @media print {
+              @page {
+                size: A4 landscape;
+                margin: 8mm 10mm;
+              }
+              body * {
+                visibility: hidden !important;
+              }
+              #budget-print-area, #budget-print-area * {
+                visibility: visible !important;
+              }
+              #budget-print-area {
+                position: absolute !important;
+                left: 0 !important;
+                top: 0 !important;
+                width: 100% !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                box-shadow: none !important;
+                border: none !important;
+                background: white !important;
+                color: black !important;
+              }
+            }
+          `}</style>
+
+          <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full p-6 space-y-6 max-h-[90vh] overflow-y-auto print:max-h-none print:shadow-none print:p-0 print:rounded-none print:w-full">
             
             {/* モーダル上部ヘッダー（印刷時には非表示） */}
             <div className="flex items-center justify-between border-b border-slate-200 pb-4 print:hidden">
@@ -709,41 +738,41 @@ export default function BudgetManager({
             </div>
 
             {/* A4 印刷プレビュー領域 */}
-            <div className="p-8 bg-white border border-slate-200 print:border-none print:p-0 text-slate-900 space-y-6">
-              <div className="text-center border-b-2 border-slate-900 pb-3">
-                <p className="text-xs font-bold text-slate-600 tracking-wider">株式会社イコーズ 船体部品・発注予算管理集計表</p>
-                <h1 className="text-2xl font-extrabold tracking-widest mt-1">
+            <div id="budget-print-area" className="p-6 bg-white border border-slate-200 print:border-none print:p-0 text-slate-900 space-y-4">
+              <div className="text-center border-b-2 border-slate-800 pb-2">
+                <p className="text-[11px] font-bold text-slate-600 tracking-wider">株式会社イコーズ 船体部品・発注予算管理集計表</p>
+                <h1 className="text-xl font-extrabold tracking-wider mt-0.5">
                   【{selectedShip}】 {selectedYear === 'ALL' ? '全期間' : `${selectedYear}年度`}{selectedMonth === 'ALL' ? '' : ` ${selectedMonth}月`} {ORDER_CATEGORY_TITLE_MAP[selectedCategory]} 集計表
                 </h1>
               </div>
 
-              <div className="flex justify-between text-xs text-slate-600 font-semibold">
-                <div>
+              <div className="flex justify-between text-xs text-slate-700 font-semibold">
+                <div className="space-y-0.5">
                   <p>対象船舶: <span className="font-bold text-slate-900">{selectedShip}</span></p>
                   <p>分類: <span className="font-bold text-slate-900">{ORDER_CATEGORY_TITLE_MAP[selectedCategory]}</span></p>
                   <p>対象期間: <span className="font-bold text-slate-900">{selectedYear === 'ALL' ? '全年度' : `${selectedYear}年度`}{selectedMonth === 'ALL' ? ' (全期間)' : ` ${selectedMonth}月`}</span></p>
                 </div>
-                <div className="text-right">
+                <div className="text-right space-y-0.5">
                   <p>出力日: {new Date().toLocaleDateString('ja-JP')}</p>
-                  <p className="text-base font-extrabold text-slate-900 mt-1">
-                    合計金額: <span className="font-mono text-xl">¥{categoryTotalAmount.toLocaleString()}</span>
+                  <p className="text-sm font-extrabold text-slate-900 mt-1">
+                    合計金額: <span className="font-mono text-base">¥{categoryTotalAmount.toLocaleString()}</span>
                   </p>
                 </div>
               </div>
 
               {/* 明細テーブル */}
-              <table className="w-full text-xs text-left border-collapse border border-slate-900">
+              <table className="w-full text-[11px] text-left border-collapse border border-slate-800">
                 <thead>
-                  <tr className="bg-slate-100 text-slate-900 border-b border-slate-900 font-bold">
-                    <th className="border border-slate-900 px-2 py-1.5 text-center w-10">No.</th>
-                    <th className="border border-slate-900 px-2 py-1.5 w-24">発注日</th>
-                    <th className="border border-slate-900 px-2 py-1.5">機器名</th>
-                    <th className="border border-slate-900 px-2 py-1.5">品名</th>
-                    <th className="border border-slate-900 px-2 py-1.5">部品番号・規格</th>
-                    <th className="border border-slate-900 px-2 py-1.5">メーカー</th>
-                    <th className="border border-slate-900 px-2 py-1.5 text-right w-16">数量</th>
-                    <th className="border border-slate-900 px-2 py-1.5 text-right w-20">単価</th>
-                    <th className="border border-slate-900 px-2 py-1.5 text-right w-24">金額</th>
+                  <tr className="bg-slate-100 text-slate-900 border-b border-slate-800 font-bold">
+                    <th className="border border-slate-800 px-2 py-1 text-center w-8">No.</th>
+                    <th className="border border-slate-800 px-2 py-1 w-20">発注日</th>
+                    <th className="border border-slate-800 px-2 py-1">機器名</th>
+                    <th className="border border-slate-800 px-2 py-1">品名</th>
+                    <th className="border border-slate-800 px-2 py-1">部品番号・規格</th>
+                    <th className="border border-slate-800 px-2 py-1">メーカー</th>
+                    <th className="border border-slate-800 px-2 py-1 text-right w-14">数量</th>
+                    <th className="border border-slate-800 px-2 py-1 text-right w-20">単価</th>
+                    <th className="border border-slate-800 px-2 py-1 text-right w-22">金額</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -754,11 +783,11 @@ export default function BudgetManager({
 
                     return (
                       <tr key={item.id} className="border-b border-slate-300">
-                        <td className="border border-slate-300 px-2 py-1 text-center font-mono">{index + 1}</td>
-                        <td className="border border-slate-300 px-2 py-1 font-mono">{item.orderDate || '-'}</td>
+                        <td className="border border-slate-300 px-2 py-1 text-center font-mono text-[10px]">{index + 1}</td>
+                        <td className="border border-slate-300 px-2 py-1 font-mono text-[10px]">{item.orderDate || '-'}</td>
                         <td className="border border-slate-300 px-2 py-1">{item.equipmentName || '-'}</td>
                         <td className="border border-slate-300 px-2 py-1 font-bold">{item.partName}</td>
-                        <td className="border border-slate-300 px-2 py-1 font-mono">{item.partNumber || '-'}</td>
+                        <td className="border border-slate-300 px-2 py-1 font-mono text-[10px]">{item.partNumber || '-'}</td>
                         <td className="border border-slate-300 px-2 py-1">{item.manufacturer || '-'}</td>
                         <td className="border border-slate-300 px-2 py-1 text-right font-mono">{qty} {item.unit || '個'}</td>
                         <td className="border border-slate-300 px-2 py-1 text-right font-mono">¥{price.toLocaleString()}</td>
@@ -768,9 +797,9 @@ export default function BudgetManager({
                   })}
                   
                   {/* 合計行 */}
-                  <tr className="bg-slate-100 font-bold border-t-2 border-slate-900">
-                    <td colSpan={8} className="border border-slate-900 px-3 py-2 text-right">総合計金額:</td>
-                    <td className="border border-slate-900 px-3 py-2 text-right font-mono text-sm">¥{categoryTotalAmount.toLocaleString()}</td>
+                  <tr className="bg-slate-100 font-bold border-t-2 border-slate-800">
+                    <td colSpan={8} className="border border-slate-800 px-2 py-1.5 text-right">総合計金額:</td>
+                    <td className="border border-slate-800 px-2 py-1.5 text-right font-mono text-xs">¥{categoryTotalAmount.toLocaleString()}</td>
                   </tr>
                 </tbody>
               </table>

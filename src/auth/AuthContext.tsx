@@ -1,4 +1,16 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { 
+  auth, 
+  db, 
+  createUserWithEmailAndPassword, 
+  signInWithEmailAndPassword, 
+  signOut, 
+  onAuthStateChanged,
+  sendPasswordResetEmail,
+  doc, 
+  setDoc, 
+  getDoc 
+} from '../lib/firebase';
 
 export interface UserProfile {
   id: string;
@@ -27,6 +39,9 @@ interface AuthContextType {
   pendingVerification: PendingVerification | null;
   sendVerificationCode: (email: string, name?: string) => Promise<{ success: boolean; message: string; demoCode?: string }>;
   verifyCodeAndLogin: (code: string) => { success: boolean; message: string };
+  signUpWithFirebase: (email: string, password: string, name: string, department?: string) => Promise<{ success: boolean; message: string }>;
+  signInWithFirebase: (email: string, password: string) => Promise<{ success: boolean; message: string }>;
+  sendPasswordReset: (email: string) => Promise<{ success: boolean; message: string }>;
   logout: () => void;
   renewAnnualAccount: () => void;
   simulateExpireAccount: () => void;
@@ -108,10 +123,49 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000;
 
+  // Firebase Auth の変更リスナー
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
+      if (fbUser) {
+        try {
+          const userDocRef = doc(db, 'users', fbUser.uid);
+          const snap = await getDoc(userDocRef);
+          if (snap.exists()) {
+            const profileData = snap.data() as UserProfile;
+            setUser(profileData);
+            localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(profileData));
+          } else if (fbUser.email) {
+            // Firestore ドキュメントがまだ存在しない場合、デフォルト作成
+            const now = new Date();
+            const oneYearLater = new Date(now.getTime() + ONE_YEAR_MS);
+            const isAdminByEmail = fbUser.email.startsWith('imoto') || fbUser.email.startsWith('admin');
+            const newProfile: UserProfile = {
+              id: fbUser.uid,
+              name: fbUser.displayName || fbUser.email.split('@')[0],
+              email: fbUser.email,
+              department: '株式会社イコーズ 工務部',
+              role: isAdminByEmail ? 'システム管理者' : '一般ユーザー',
+              status: 'active',
+              createdAt: now.toISOString(),
+              lastVerifiedAt: now.toISOString(),
+              expiresAt: oneYearLater.toISOString(),
+            };
+            await setDoc(userDocRef, newProfile);
+            setUser(newProfile);
+            localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(newProfile));
+          }
+        } catch (e) {
+          console.error('Firebase profile sync error:', e);
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
   // 全ユーザーリストの変更をストレージに同期
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY_ALL_USERS, JSON.stringify(allUsers));
-    // ログイン中のユーザーの状態（無効化など）が変更されたら反映
     if (user) {
       const updatedSelf = allUsers.find(u => u.email.toLowerCase() === user.email.toLowerCase());
       if (updatedSelf) {
@@ -138,7 +192,142 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return diffDays;
   }, [user]);
 
-  // メール認証コードの送信
+  // Firebase メール・パスワード新規アカウント登録 (リアルメール認証対応)
+  const signUpWithFirebase = async (email: string, password: string, name: string, department: string = '株式会社イコーズ 工務部') => {
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail.includes('@')) {
+      return { success: false, message: '有効なメールアドレスを入力してください。' };
+    }
+    if (password.length < 6) {
+      return { success: false, message: 'パスワードは6文字以上で入力してください。' };
+    }
+
+    try {
+      const credential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
+      const fbUser = credential.user;
+      const now = new Date();
+      const oneYearLater = new Date(now.getTime() + ONE_YEAR_MS);
+      const isAdminByEmail = cleanEmail.startsWith('imoto') || cleanEmail.startsWith('admin');
+
+      const newProfile: UserProfile = {
+        id: fbUser.uid,
+        name: name || cleanEmail.split('@')[0],
+        email: cleanEmail,
+        department: department || '株式会社イコーズ 工務部',
+        role: isAdminByEmail ? 'システム管理者' : '一般ユーザー',
+        status: 'active',
+        createdAt: now.toISOString(),
+        lastVerifiedAt: now.toISOString(),
+        expiresAt: oneYearLater.toISOString(),
+      };
+
+      // Firestore にユーザー情報を保存
+      await setDoc(doc(db, 'users', fbUser.uid), newProfile);
+
+      setUser(newProfile);
+      localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(newProfile));
+      setAllUsers(prev => [newProfile, ...prev.filter(u => u.email.toLowerCase() !== cleanEmail)]);
+
+      return {
+        success: true,
+        message: 'アカウント作成が完了し、ログインしました。1年間有効です。'
+      };
+    } catch (error: any) {
+      console.error('SignUp Error:', error);
+      let errMsg = 'アカウント作成に失敗しました。';
+      if (error?.code === 'auth/email-already-in-use') {
+        errMsg = 'このメールアドレスは既に登録されています。ログインをお試しください。';
+      } else if (error?.code === 'auth/invalid-email') {
+        errMsg = 'メールアドレスの形式が正しくありません。';
+      } else if (error?.code === 'auth/weak-password') {
+        errMsg = 'パスワードが弱すぎます。6文字以上を指定してください。';
+      }
+      return { success: false, message: errMsg };
+    }
+  };
+
+  // Firebase メール・パスワードログイン
+  const signInWithFirebase = async (email: string, password: string) => {
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail || !password) {
+      return { success: false, message: 'メールアドレスとパスワードを入力してください。' };
+    }
+
+    try {
+      const credential = await signInWithEmailAndPassword(auth, cleanEmail, password);
+      const fbUser = credential.user;
+
+      // Firestore からプロファイル取得
+      const snap = await getDoc(doc(db, 'users', fbUser.uid));
+      let currentProfile: UserProfile;
+
+      if (snap.exists()) {
+        currentProfile = snap.data() as UserProfile;
+      } else {
+        const now = new Date();
+        const oneYearLater = new Date(now.getTime() + ONE_YEAR_MS);
+        const isAdminByEmail = cleanEmail.startsWith('imoto') || cleanEmail.startsWith('admin');
+        currentProfile = {
+          id: fbUser.uid,
+          name: cleanEmail.split('@')[0],
+          email: cleanEmail,
+          department: '株式会社イコーズ 工務部',
+          role: isAdminByEmail ? 'システム管理者' : '一般ユーザー',
+          status: 'active',
+          createdAt: now.toISOString(),
+          lastVerifiedAt: now.toISOString(),
+          expiresAt: oneYearLater.toISOString(),
+        };
+        await setDoc(doc(db, 'users', fbUser.uid), currentProfile);
+      }
+
+      if (currentProfile.status === 'suspended') {
+        await signOut(auth);
+        return {
+          success: false,
+          message: '【アクセス拒否】このアカウントは管理者により停止されています。'
+        };
+      }
+
+      setUser(currentProfile);
+      localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(currentProfile));
+
+      return {
+        success: true,
+        message: 'ログインに成功しました。'
+      };
+    } catch (error: any) {
+      console.error('SignIn Error:', error);
+      let errMsg = 'ログインに失敗しました。';
+      if (error?.code === 'auth/user-not-found' || error?.code === 'auth/wrong-password' || error?.code === 'auth/invalid-credential') {
+        errMsg = 'メールアドレスまたはパスワードが正しくありません。';
+      }
+      return { success: false, message: errMsg };
+    }
+  };
+
+  // パスワード再設定メール送信
+  const sendPasswordReset = async (email: string) => {
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail) {
+      return { success: false, message: 'メールアドレスを入力してください。' };
+    }
+    try {
+      await sendPasswordResetEmail(auth, cleanEmail);
+      return {
+        success: true,
+        message: `${cleanEmail} 宛にパスワード再設定用のメールを送信しました。`
+      };
+    } catch (error: any) {
+      console.error('Password Reset Error:', error);
+      return {
+        success: false,
+        message: 'パスワード再設定メールの送信に失敗しました。'
+      };
+    }
+  };
+
+  // メール認証コードの送信（ワンタイム/デモ用）
   const sendVerificationCode = async (email: string, name?: string) => {
     const cleanEmail = email.trim().toLowerCase();
     
@@ -146,7 +335,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return { success: false, message: '有効なメールアドレスを入力してください。' };
     }
 
-    // アカウントの停止状態をあらかじめチェック
     const existing = allUsers.find(u => u.email.toLowerCase() === cleanEmail);
     if (existing && existing.status === 'suspended') {
       return {
@@ -185,7 +373,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return { success: false, message: '認証コードが一致しません。正しく入力してください。' };
     }
 
-    // 再チェック：停止アカウントでないか
     const existingIndex = allUsers.findIndex(u => u.email.toLowerCase() === pendingVerification.email.toLowerCase());
     if (existingIndex !== -1 && allUsers[existingIndex].status === 'suspended') {
       return {
@@ -200,7 +387,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     let updatedUser: UserProfile;
 
     if (existingIndex !== -1) {
-      // 既存ユーザーの年次更新＆ログイン
       const target = allUsers[existingIndex];
       updatedUser = {
         ...target,
@@ -213,8 +399,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       newAllUsers[existingIndex] = updatedUser;
       setAllUsers(newAllUsers);
     } else {
-      // 新規ユーザー登録
-      // メールのローカルパートが imoto や admin を含む場合は管理者初期割り当て
       const isAdminByEmail = pendingVerification.email.startsWith('imoto') || pendingVerification.email.startsWith('admin');
       
       updatedUser = {
@@ -258,9 +442,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(updated));
   };
 
-  // --- 管理者専用機能 ---
-
-  // アカウント無効化（退職時など）
+  // 管理者専用機能
   const suspendUser = (targetEmail: string) => {
     setAllUsers(prev => prev.map(u => {
       if (u.email.toLowerCase() === targetEmail.toLowerCase()) {
@@ -270,7 +452,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }));
   };
 
-  // アカウント有効化（再開）
   const activateUser = (targetEmail: string) => {
     setAllUsers(prev => prev.map(u => {
       if (u.email.toLowerCase() === targetEmail.toLowerCase()) {
@@ -280,7 +461,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }));
   };
 
-  // 管理者権限の付与 / 解除
   const toggleAdminRole = (targetEmail: string) => {
     setAllUsers(prev => prev.map(u => {
       if (u.email.toLowerCase() === targetEmail.toLowerCase()) {
@@ -291,12 +471,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }));
   };
 
-  // ユーザー削除
   const deleteUser = (targetEmail: string) => {
     setAllUsers(prev => prev.filter(u => u.email.toLowerCase() !== targetEmail.toLowerCase()));
   };
 
-  // テスト用：自分のロールを切り替え
   const toggleMyRoleForDemo = () => {
     if (!user) return;
     const newRole = user.role === 'システム管理者' ? '一般ユーザー' : 'システム管理者';
@@ -306,6 +484,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const logout = () => {
+    signOut(auth).catch(() => {});
     setUser(null);
     setPendingVerification(null);
     localStorage.removeItem(STORAGE_KEY_USER);
@@ -320,6 +499,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         pendingVerification,
         sendVerificationCode,
         verifyCodeAndLogin,
+        signUpWithFirebase,
+        signInWithFirebase,
+        sendPasswordReset,
         logout,
         renewAnnualAccount,
         simulateExpireAccount,
@@ -344,3 +526,4 @@ export const useAuth = () => {
   }
   return context;
 };
+

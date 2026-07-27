@@ -216,140 +216,138 @@ export default function OrderPreview({ header, items, histories, onHistoriesChan
           const displayEquipment = uniqueEquipments.length > 0 ? uniqueEquipments.join(' / ') : '';
           const displayModel = uniqueModels.length > 0 ? uniqueModels.join(' / ') : '';
 
-          // PDFの用紙の合計行数を再現（合計22行にするための空行のパディング）
-          const TOTAL_ROWS = 22;
+          // PDFの用紙の合計行数を再現（A4 1枚に完璧に収まるよう14行に調整）
+          const TOTAL_ROWS = 14;
           const emptyRowsCount = Math.max(0, TOTAL_ROWS - mfgItems.length);
           const emptyRows = Array.from({ length: emptyRowsCount });
 
           return (
             <div 
               key={group.key} 
-              className="bg-white rounded-xl border border-slate-300 shadow-md p-8 max-w-[840px] mx-auto relative overflow-hidden print:shadow-none print:border-none print:p-0 print:m-0 print:rounded-none print:max-w-none print:bg-transparent page-break"
+              className="bg-white rounded-xl border border-slate-300 shadow-md p-6 max-w-[840px] mx-auto relative overflow-hidden print:shadow-none print:border-none print:p-0 print:m-0 print:rounded-none print:max-w-none print:bg-transparent page-break"
               style={{ 
-                // A4の比率に近づける
-                minHeight: '1100px',
                 pageBreakAfter: groupIndex < orderGroups.length - 1 ? 'always' : 'avoid',
                 breakAfter: groupIndex < orderGroups.length - 1 ? 'page' : 'avoid'
               }}
             >
               {/* PDF再現部 */}
-              <div className="text-slate-900 font-sans leading-relaxed" style={{ fontSize: '13px' }}>
+              <div className="text-slate-900 font-sans leading-snug" style={{ fontSize: '12px' }}>
                 
                 {/* 1. タイトル ＆ 管理文書番号 */}
-                <div className="mb-6 relative pt-4">
+                <div className="mb-4 relative pt-3">
                   {/* 管理文書番号 */}
-                  <div className="absolute left-0 top-0 text-[11px] font-semibold text-slate-800 tracking-wider">
+                  <div className="absolute left-0 top-0 text-[10px] font-semibold text-slate-800 tracking-wider">
                     管理文書番号Ikous 08 I 04
                   </div>
 
                   {(header.isUrgent || mfgItems.some(i => i.isUrgent)) && (
-                    <div className="absolute left-0 top-6 text-red-600 font-bold border-2 border-red-600 px-3 py-0.5 text-xs rounded tracking-wider rotate-[-5deg] print:border-red-600 print:text-red-600">
+                    <div className="absolute left-0 top-5 text-red-600 font-bold border-2 border-red-600 px-2.5 py-0.5 text-xs rounded tracking-wider rotate-[-5deg] print:border-red-600 print:text-red-600">
                       至急
                     </div>
                   )}
 
                   <div className="text-center">
-                    <h1 className="text-2xl font-bold tracking-[0.2em] inline-block pb-1 border-b-4 border-double border-slate-900">
+                    <h1 className="text-xl font-bold tracking-[0.2em] inline-block pb-1 border-b-4 border-double border-slate-900">
                       {ORDER_CATEGORY_TITLE_MAP[category] || '部品注文書'}
                     </h1>
                   </div>
                 </div>
 
                 {/* 2. 宛名・自社情報・発注情報ヘッダー */}
-                <div className="grid grid-cols-12 gap-4 mb-4">
+                <div className="grid grid-cols-12 gap-3 mb-3">
                   {/* 左上: 宛名・TEL/FAX */}
-                  <div className="col-span-7 space-y-2">
-                    <div className="border-b-2 border-slate-900 pb-1 flex items-end">
-                      <span className="text-lg font-bold mr-2">{mfg}</span>
-                      <span className="text-base font-semibold">御中</span>
+                  <div className="col-span-7 space-y-1.5">
+                    <div className="border-b-2 border-slate-900 pb-0.5 flex items-end">
+                      <span className="text-base font-bold mr-2">{mfg}</span>
+                      <span className="text-sm font-semibold">御中</span>
                     </div>
-                    <div className="text-xs space-y-0.5">
+                    <div className="text-[11px] space-y-0.5">
                       <div>TEL：0896-28-1755　FAX：0896-28-1713</div>
                       <div className="font-semibold text-slate-800">下記の通り発注いたします。</div>
                     </div>
 
                     {/* 船名などの情報エリア (PDFそっくりの二重線・ドット罫線) */}
-                    <div className="space-y-1 pt-1">
+                    <div className="space-y-0.5 pt-0.5 text-[11px]">
                       <div className="flex border-b border-dotted border-slate-400 pb-0.5">
-                        <span className="w-20 shrink-0 font-medium">船名：</span>
+                        <span className="w-16 shrink-0 font-medium">船名：</span>
                         <span className="font-semibold text-slate-800">{displayShip}</span>
                       </div>
                       <div className="flex border-b border-dotted border-slate-400 pb-0.5">
-                        <span className="w-20 shrink-0 font-medium">機器名：</span>
+                        <span className="w-16 shrink-0 font-medium">機器名：</span>
                         <span className="font-semibold text-slate-800">{displayEquipment}</span>
                       </div>
                       <div className="flex border-b border-dotted border-slate-400 pb-0.5">
-                        <span className="w-20 shrink-0 font-medium">ﾒｰｶｰ：</span>
+                        <span className="w-16 shrink-0 font-medium">ﾒｰｶｰ：</span>
                         <span className="font-semibold text-slate-800">{mfg}</span>
                       </div>
                       <div className="flex border-b border-dotted border-slate-400 pb-0.5">
-                        <span className="w-20 shrink-0 font-medium">形式：</span>
+                        <span className="w-16 shrink-0 font-medium">形式：</span>
                         <span className="font-semibold text-slate-800">{displayModel}</span>
                       </div>
                       <div className="flex border-b-2 border-slate-900 pb-0.5 font-bold">
-                        <span className="w-20 shrink-0">合計金額：</span>
+                        <span className="w-16 shrink-0">合計金額：</span>
                         {showPrice ? (
-                          <span className="text-sm">¥{totalAmount.toLocaleString()} -</span>
+                          <span className="text-xs">¥{totalAmount.toLocaleString()} -</span>
                         ) : (
-                          <span className="text-xs text-slate-500 font-normal">（※業者様にてご記入ください）</span>
+                          <span className="text-[10px] text-slate-500 font-normal">（※業者様にてご記入ください）</span>
                         )}
                       </div>
                       <div className="flex border-b border-dotted border-slate-400 pb-0.5">
-                        <span className="w-20 shrink-0 font-medium">納品期限：</span>
+                        <span className="w-16 shrink-0 font-medium">納品期限：</span>
                         <span>{header.limitDate && header.limitDate.trim() !== '' ? header.limitDate : '-'}</span>
                       </div>
                       <div className="flex border-b-2 border-slate-900 pb-0.5">
-                        <span className="w-20 shrink-0 font-medium">納品場所：</span>
+                        <span className="w-16 shrink-0 font-medium">納品場所：</span>
                         <span>{header.place && header.place.trim() !== '' ? header.place : '-'}</span>
                       </div>
                     </div>
                   </div>
 
                   {/* 右上: 発注日・発注書No・自社ロゴ */}
-                  <div className="col-span-5 flex flex-col justify-between pl-4">
+                  <div className="col-span-5 flex flex-col justify-between pl-2">
                     {/* 発注日・No枠 */}
-                    <table className="w-full border-collapse border border-slate-900 text-xs text-center mb-4">
+                    <table className="w-full border-collapse border border-slate-900 text-[11px] text-center mb-2">
                       <tbody>
                         <tr>
-                          <td className="border border-slate-900 bg-slate-50 px-2 py-1 font-medium w-1/3">発注年月日</td>
-                          <td className="border border-slate-900 px-2 py-1">{header.date || '-'}</td>
+                          <td className="border border-slate-900 bg-slate-50 px-1.5 py-0.5 font-medium w-1/3">発注年月日</td>
+                          <td className="border border-slate-900 px-1.5 py-0.5">{header.date || '-'}</td>
                         </tr>
                         <tr>
-                          <td className="border border-slate-900 bg-slate-50 px-2 py-1 font-medium">発注書No.</td>
-                          <td className="border border-slate-900 px-2 py-1 font-mono font-bold">{group.orderNo}</td>
+                          <td className="border border-slate-900 bg-slate-50 px-1.5 py-0.5 font-medium">発注書No.</td>
+                          <td className="border border-slate-900 px-1.5 py-0.5 font-mono font-bold">{group.orderNo}</td>
                         </tr>
                       </tbody>
                     </table>
 
                     {/* 自社住所 */}
-                    <div className="border border-dashed border-slate-900 p-3 rounded bg-white text-xs space-y-1">
-                      <div className="font-bold text-sm">株式会社 イコーズ</div>
-                      <div className="text-slate-600">
+                    <div className="border border-dashed border-slate-900 p-2 rounded bg-white text-[11px] space-y-0.5">
+                      <div className="font-bold text-xs">株式会社 イコーズ</div>
+                      <div className="text-slate-600 text-[10px]">
                         住所：〒745-0034<br />
-                        <span className="pl-9">山口県周南市御幸通2-12秋本ビル4F</span>
+                        <span className="pl-7">山口県周南市御幸通2-12秋本ビル4F</span>
                       </div>
-                      <div>TEL： 0834-27-6551</div>
-                      <div>FAX： 0834-27-6545</div>
-                      <div className="font-medium flex items-center pt-1 border-t border-dashed border-slate-200">
+                      <div className="text-[10px]">TEL： 0834-27-6551</div>
+                      <div className="text-[10px]">FAX： 0834-27-6545</div>
+                      <div className="font-medium flex items-center pt-0.5 border-t border-dashed border-slate-200">
                         <span>担当：</span>
-                        <span className="text-sm font-bold border-b border-slate-900 px-2 flex-1">{header.staff || '大野隆太'}</span>
+                        <span className="text-xs font-bold border-b border-slate-900 px-1 flex-1">{header.staff || '大野隆太'}</span>
                       </div>
                     </div>
                   </div>
                 </div>
 
                 {/* 3. 明細テーブル */}
-                <table className="w-full border-collapse border-2 border-slate-950 text-xs table-fixed">
+                <table className="w-full border-collapse border-2 border-slate-950 text-[11px] table-fixed">
                   <thead>
                     <tr className="bg-slate-100 text-center border-b-2 border-slate-950">
-                      <th className="border border-slate-900 py-1.5 font-bold text-[11px]" style={{ width: '4%' }}>No.</th>
-                      <th className="border border-slate-900 py-1.5 font-bold text-[11px]" style={{ width: '29%' }}>品名</th>
-                      <th className="border border-slate-900 py-1.5 font-bold text-[11px]" style={{ width: '23%' }}>部品番号・規格</th>
-                      <th className="border border-slate-900 py-1.5 font-bold text-[11px]" style={{ width: '7%' }}>数量</th>
-                      <th className="border border-slate-900 py-1.5 font-bold text-[11px]" style={{ width: '12%' }}>単位</th>
-                      <th className="border border-slate-900 py-1.5 font-bold text-[11px]" style={{ width: '11%' }}>単価</th>
-                      <th className="border border-slate-900 py-1.5 font-bold text-[11px]" style={{ width: '12%' }}>金額</th>
-                      <th className="border border-slate-900 py-1.5 font-bold text-[11px]" style={{ width: '12%' }}>備考</th>
+                      <th className="border border-slate-900 py-1 font-bold text-[10px]" style={{ width: '4%' }}>No.</th>
+                      <th className="border border-slate-900 py-1 font-bold text-[10px]" style={{ width: '29%' }}>品名</th>
+                      <th className="border border-slate-900 py-1 font-bold text-[10px]" style={{ width: '23%' }}>部品番号・規格</th>
+                      <th className="border border-slate-900 py-1 font-bold text-[10px]" style={{ width: '7%' }}>数量</th>
+                      <th className="border border-slate-900 py-1 font-bold text-[10px]" style={{ width: '10%' }}>単位</th>
+                      <th className="border border-slate-900 py-1 font-bold text-[10px]" style={{ width: '12%' }}>単価</th>
+                      <th className="border border-slate-900 py-1 font-bold text-[10px]" style={{ width: '13%' }}>金額</th>
+                      <th className="border border-slate-900 py-1 font-bold text-[10px]" style={{ width: '12%' }}>備考</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -358,19 +356,19 @@ export default function OrderPreview({ header, items, histories, onHistoriesChan
                       const amount = (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0);
                       return (
                         <tr key={item.id} className="text-slate-800 hover:bg-slate-50/50">
-                          <td className="border border-slate-400 py-1 text-center font-medium">{idx + 1}</td>
-                          <td className="border border-slate-400 px-2 py-1 truncate font-medium text-[11px]">{item.partName}</td>
-                          <td className="border border-slate-400 px-2 py-1 truncate font-mono text-[10px]">{item.partNumber || '-'}</td>
-                          <td className="border border-slate-400 py-1 text-right pr-2 font-medium">{item.quantity || ''}</td>
-                          <td className="border border-slate-400 py-1 px-1 text-center font-semibold text-[11px] text-slate-900 whitespace-nowrap">{item.unit || ''}</td>
-                          <td className="border border-slate-400 py-1 text-right pr-2 font-mono">
+                          <td className="border border-slate-400 py-0.5 text-center font-medium">{idx + 1}</td>
+                          <td className="border border-slate-400 px-1.5 py-0.5 truncate font-medium text-[10px]">{item.partName}</td>
+                          <td className="border border-slate-400 px-1.5 py-0.5 truncate font-mono text-[9px]">{item.partNumber || '-'}</td>
+                          <td className="border border-slate-400 py-0.5 text-right pr-1.5 font-medium">{item.quantity || ''}</td>
+                          <td className="border border-slate-400 py-0.5 px-0.5 text-center font-semibold text-[10px] text-slate-900 whitespace-nowrap">{item.unit || ''}</td>
+                          <td className="border border-slate-400 py-0.5 text-right pr-1.5 font-mono text-[10px]">
                             {showPrice && item.unitPrice !== '' ? Number(item.unitPrice).toLocaleString() : ''}
                           </td>
-                          <td className="border border-slate-400 py-1 text-right pr-2 font-mono font-medium">
+                          <td className="border border-slate-400 py-0.5 text-right pr-1.5 font-mono font-medium text-[10px]">
                             {showPrice ? (amount > 0 ? amount.toLocaleString() : '0') : ''}
                           </td>
-                          <td className={`border border-slate-400 px-2 py-1 truncate text-[10px] ${item.isUrgent ? 'text-red-600 font-bold' : ''}`}>
-                            {item.isUrgent && <span className="text-red-600 font-bold mr-1 inline-block">【至急】</span>}
+                          <td className={`border border-slate-400 px-1.5 py-0.5 truncate text-[9px] ${item.isUrgent ? 'text-red-600 font-bold' : ''}`}>
+                            {item.isUrgent && <span className="text-red-600 font-bold mr-0.5 inline-block">【至急】</span>}
                             {item.remark || ''}
                           </td>
                         </tr>
@@ -381,25 +379,25 @@ export default function OrderPreview({ header, items, histories, onHistoriesChan
                     {emptyRows.map((_, idx) => {
                       const rowNum = mfgItems.length + idx + 1;
                       return (
-                        <tr key={`empty-${idx}`} className="h-[25px]">
-                          <td className="border border-slate-300 text-center text-slate-300 text-[10px]">{rowNum}</td>
-                          <td className="border border-slate-300 px-2 py-1"></td>
-                          <td className="border border-slate-300 px-2 py-1"></td>
-                          <td className="border border-slate-300 py-1"></td>
-                          <td className="border border-slate-300 py-1"></td>
-                          <td className="border border-slate-300 py-1"></td>
-                          <td className="border border-slate-300 py-1"></td>
-                          <td className="border border-slate-300 px-2 py-1"></td>
+                        <tr key={`empty-${idx}`} className="h-[21px]">
+                          <td className="border border-slate-300 text-center text-slate-300 text-[9px]">{rowNum}</td>
+                          <td className="border border-slate-300 px-1.5 py-0.5"></td>
+                          <td className="border border-slate-300 px-1.5 py-0.5"></td>
+                          <td className="border border-slate-300 py-0.5"></td>
+                          <td className="border border-slate-300 py-0.5"></td>
+                          <td className="border border-slate-300 py-0.5"></td>
+                          <td className="border border-slate-300 py-0.5"></td>
+                          <td className="border border-slate-300 px-1.5 py-0.5"></td>
                         </tr>
                       );
                     })}
 
                     {/* 合計金額フッター行 */}
                     <tr className="border-t-2 border-slate-950 font-bold bg-slate-50">
-                      <td colSpan={5} className="border border-slate-900 text-right pr-4 py-2 text-sm">
+                      <td colSpan={5} className="border border-slate-900 text-right pr-3 py-1 text-xs">
                         合計金額
                       </td>
-                      <td colSpan={2} className="border border-slate-900 text-right pr-2 py-2 text-sm text-slate-900 font-mono">
+                      <td colSpan={2} className="border border-slate-900 text-right pr-2 py-1 text-xs text-slate-900 font-mono">
                         {showPrice ? `¥${totalAmount.toLocaleString()}` : ''}
                       </td>
                       <td className="border border-slate-900"></td>
@@ -415,11 +413,17 @@ export default function OrderPreview({ header, items, histories, onHistoriesChan
       {/* 印刷用CSSの差し込み (PDFレイアウトの最適化) */}
       <style>{`
         @media print {
+          @page {
+            size: A4 portrait;
+            margin: 8mm 10mm;
+          }
           body {
             background: white !important;
             color: black !important;
             margin: 0 !important;
             padding: 0 !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
           }
           .print\\:hidden {
             display: none !important;
@@ -436,6 +440,7 @@ export default function OrderPreview({ header, items, histories, onHistoriesChan
             max-width: none !important;
             min-height: 0 !important;
             background: transparent !important;
+            overflow: visible !important;
           }
           .page-break:last-child {
             page-break-after: avoid !important;
