@@ -1,0 +1,6 @@
+{
+  "name": "船用部品発注書自動作成システム",
+  "description": "過去の発注履歴CSVから船名、機器名、メーカー、形式、部品番号などを自動分析・補完。数量入力で単位も自動反映。メーカー別に発注書を自動分割し、品注文書形式で美しく印刷・PDF出力可能な発注書作成アプリ。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
