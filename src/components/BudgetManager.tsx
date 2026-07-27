@@ -270,11 +270,13 @@ export default function BudgetManager({
 
   // 印刷ダイアログのトリガー
   const triggerPrint = () => {
-    window.print();
+    setTimeout(() => {
+      window.print();
+    }, 100);
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 print:hidden">
       {/* 画面ヘッダー情報 */}
       <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-2xl p-6 text-white shadow-xl border border-slate-800">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -674,7 +676,7 @@ export default function BudgetManager({
 
       {/* 印刷・PDF表示用モーダル (ダイアログ) */}
       {showPrintModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto print:p-0 print:bg-transparent print:static print:block">
+        <div className="budget-print-modal-overlay fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto print:p-0 print:bg-transparent print:static print:block print:overflow-visible">
           
           {/* 印刷専用スタイル定義 */}
           <style>{`
@@ -683,29 +685,62 @@ export default function BudgetManager({
                 size: A4 portrait;
                 margin: 8mm 10mm;
               }
-              body * {
-                visibility: hidden !important;
+
+              /* 画面上部ヘッダーや操作パネル、モーダル以外の画面領域を印刷非表示 */
+              header, nav, .print\\:hidden {
+                display: none !important;
               }
-              #budget-print-area, #budget-print-area * {
-                visibility: visible !important;
+
+              /* モーダル背景・外枠のリセット */
+              .budget-print-modal-overlay {
+                position: static !important;
+                background: none !important;
+                padding: 0 !important;
+                margin: 0 !important;
+                width: 100% !important;
+                height: auto !important;
+                overflow: visible !important;
+                backdrop-filter: none !important;
               }
+
+              .budget-print-modal-container {
+                position: static !important;
+                max-width: none !important;
+                max-height: none !important;
+                box-shadow: none !important;
+                border: none !important;
+                padding: 0 !important;
+                margin: 0 !important;
+                width: 100% !important;
+                overflow: visible !important;
+              }
+
               #budget-print-area {
-                position: absolute !important;
-                left: 0 !important;
-                top: 0 !important;
+                display: block !important;
+                position: static !important;
                 width: 100% !important;
                 margin: 0 !important;
                 padding: 0 !important;
-                box-shadow: none !important;
                 border: none !important;
+                box-shadow: none !important;
                 background: white !important;
                 color: black !important;
-                overflow: visible !important;
+              }
+
+              table {
+                width: 100% !important;
+                border-collapse: collapse !important;
+              }
+              tr {
+                page-break-inside: avoid !important;
+              }
+              thead {
+                display: table-header-group !important;
               }
             }
           `}</style>
 
-          <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full p-6 space-y-6 max-h-[90vh] overflow-y-auto print:max-h-none print:shadow-none print:p-0 print:rounded-none print:w-full">
+          <div className="budget-print-modal-container bg-white rounded-2xl shadow-2xl max-w-4xl w-full p-6 space-y-6 max-h-[90vh] overflow-y-auto print:max-h-none print:shadow-none print:p-0 print:rounded-none print:w-full">
             
             {/* モーダル上部ヘッダー（印刷時には非表示） */}
             <div className="flex items-center justify-between border-b border-slate-200 pb-4 print:hidden">
