@@ -260,13 +260,14 @@ export function registerNewItemsToHistories(
   return updatedHistories;
 }
 
-// 予算管理画面等で、特定履歴の単価・金額を後から更新し、同じ品名・部品番号のマスター単価にも次回反映されるよう同期する
+// 予算管理画面等で、特定履歴の単価・金額・発注書番号を後から更新し、同じ品名・部品番号のマスター単価にも次回反映されるよう同期する
 export function updateHistoryUnitPrice(
   currentHistories: PartHistory[],
   historyId: string,
   newUnitPrice: number,
   newQuantity?: number,
-  newRemark?: string
+  newRemark?: string,
+  newOrderNo?: string
 ): PartHistory[] {
   const targetItem = currentHistories.find(h => h.id === historyId);
   if (!targetItem) return currentHistories;
@@ -280,7 +281,8 @@ export function updateHistoryUnitPrice(
         ...h,
         unitPrice: newUnitPrice,
         quantity: newQuantity !== undefined ? newQuantity : h.quantity,
-        remark: newRemark !== undefined ? newRemark : h.remark
+        remark: newRemark !== undefined ? newRemark : h.remark,
+        orderNo: newOrderNo !== undefined ? newOrderNo : h.orderNo
       };
     }
     // 同一の品名・部品番号（および船名・機器）のレコードがあれば次回候補のために単価を連動更新

@@ -22,20 +22,30 @@ export function generateOrderNo(
     const d = new Date(dateStr);
     if (!isNaN(d.getTime())) {
       year = d.getFullYear();
+    } else {
+      const match = dateStr.match(/\b(20\d\d)\b/);
+      if (match) {
+        year = parseInt(match[1], 10);
+      }
     }
   }
 
-  // 検索対象のプレフィックスと正規表現 pattern: Run2026-B (\d+)
+  // 検索対象のプレフィックスと正規表現
   const prefix = `Run${year}-${code}`;
-  const regex = new RegExp(`^Run${year}-${code}(\\d+)$`, 'i');
+  
+  // 正規表現: Run2026-B1, Run2026-B-1, Run2026-B001 などに対応
+  const regex = new RegExp(`^Run${year}-?${code}-?(\\d+)$`, 'i');
 
   let maxNum = 0;
 
   // 過去履歴の中から、同船名・同分類コードの最大連番を検索
   histories.forEach(h => {
     const hShip = (h.shipName || '').trim();
-    if ((hShip === ship || (ship === '未指定' && !hShip)) && h.orderNo) {
-      const match = h.orderNo.trim().match(regex);
+    const isShipMatch = hShip === ship || (ship === '未指定' && (!hShip || hShip === '未指定'));
+
+    if (isShipMatch && h.orderNo) {
+      const trimmedNo = h.orderNo.trim();
+      const match = trimmedNo.match(regex);
       if (match) {
         const num = parseInt(match[1], 10);
         if (!isNaN(num) && num > maxNum) {
@@ -48,3 +58,4 @@ export function generateOrderNo(
   const nextNum = maxNum + 1 + offsetCount;
   return `${prefix}${nextNum}`;
 }
+

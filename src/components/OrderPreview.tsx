@@ -187,7 +187,7 @@ export default function OrderPreview({ header, items, histories, onHistoriesChan
               に変更すると、パソコン内にPDFファイルとして保存できます。プリンターを選択すればそのまま紙に印刷されます。
             </p>
             <p className="text-[11px] text-amber-800">
-              ※「金額を入れない」を選ぶと、業者様が後から金額・単価を手書き記入できる空欄スタイルの注文書が出力されます。
+              ※【印刷 / PDF保存】ボタンを押したタイミングで「発注履歴＆予算集計」へ自動記録されます。金額あり・なしのどちらを何度押しても重複して登録されることはありません。
             </p>
           </div>
         </div>

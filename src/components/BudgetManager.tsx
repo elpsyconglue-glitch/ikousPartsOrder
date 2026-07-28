@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
-import { PartHistory, OrderCategory, ORDER_CATEGORY_TITLE_MAP } from '../types';
+import { PartHistory, OrderCategory, ORDER_CATEGORY_TITLE_MAP, ORDER_CATEGORY_CODE_MAP } from '../types';
 import { DEFAULT_SHIP_NAMES } from '../defaultData';
 import { getFiscalYear, updateHistoryUnitPrice, savePartHistories, clearAllPartHistories } from '../utils/csvHelper';
+import { generateOrderNo as createAutoOrderNo } from '../utils/orderNoHelper';
 import PriceRevisionModal from './PriceRevisionModal';
 import ProtectedActionModal from './ProtectedActionModal';
 import ShipManagementModal from './ShipManagementModal';
@@ -22,7 +23,8 @@ import {
   Layers,
   ArrowRight,
   FileCheck,
-  Settings
+  Settings,
+  RefreshCw
 } from 'lucide-react';
 
 
@@ -63,6 +65,7 @@ export default function BudgetManager({
   const [editPrice, setEditPrice] = useState<number | ''>('');
   const [editQty, setEditQty] = useState<number | ''>('');
   const [editRemark, setEditRemark] = useState<string>('');
+  const [editOrderNo, setEditOrderNo] = useState<string>('');
 
   // 印刷モーダルの表示状態
   const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
@@ -85,6 +88,7 @@ export default function BudgetManager({
     unit: string;
     unitPrice: number | '';
     orderDate: string;
+    orderNo: string;
     remark: string;
   }>({
     equipmentName: '',
@@ -96,8 +100,21 @@ export default function BudgetManager({
     unit: '個',
     unitPrice: '',
     orderDate: new Date().toISOString().split('T')[0],
+    orderNo: '',
     remark: ''
   });
+
+  // 選択された月および年度の表示用テキストヘルパー
+  const getSelectedMonthText = (monthStr: string, yearStr: string) => {
+    if (monthStr === 'ALL') return '';
+    const m = Number(monthStr);
+    if (yearStr !== 'ALL') {
+      const baseYr = Number(yearStr);
+      const calYr = m >= 4 ? baseYr : baseYr + 1;
+      return ` ${calYr}年${m}月`;
+    }
+    return m >= 4 ? ` ${m}月` : ` 翌年${m}月`;
+  };
 
   // 船別・予算発注履歴の対象データ：発注日(orderDate)が存在する「実際の入力・発注実績レコード」のみを抽出
   // (※CSVインポートした未発注のパーツマスタデータは自動除外)
@@ -188,15 +205,16 @@ export default function BudgetManager({
     }, 0);
   }, [filteredHistories]);
 
-  // 単価・金額の編集開始
+  // 単価・金額・発注書番号の編集開始
   const handleStartEdit = (item: PartHistory) => {
     setEditingId(item.id);
     setEditPrice(item.unitPrice || '');
     setEditQty(item.quantity !== undefined ? item.quantity : 1);
     setEditRemark(item.remark || '');
+    setEditOrderNo(item.orderNo || '');
   };
 
-  // 単価・金額の編集保存（次回自動反映）
+  // 単価・金額・発注書番号の編集保存（次回自動反映）
   const handleSaveEdit = (id: string) => {
     const newPrice = typeof editPrice === 'number' ? editPrice : 0;
     const newQty = typeof editQty === 'number' ? editQty : 1;
@@ -206,7 +224,8 @@ export default function BudgetManager({
       id,
       newPrice,
       newQty,
-      editRemark
+      editRemark,
+      editOrderNo.trim()
     );
     onHistoriesChange(updated);
     setEditingId(null);
@@ -219,6 +238,34 @@ export default function BudgetManager({
       savePartHistories(updated);
       onHistoriesChange(updated);
     }
+  };
+
+  // 手動実績追加モーダルを開く
+  const handleOpenAddModal = () => {
+    const today = new Date().toISOString().split('T')[0];
+    const autoOrderNo = createAutoOrderNo(histories, selectedShip, selectedCategory, today);
+    setNewItem({
+      equipmentName: '',
+      partName: '',
+      partNumber: '',
+      manufacturer: '',
+      model: '',
+      quantity: 1,
+      unit: '個',
+      unitPrice: '',
+      orderDate: today,
+      orderNo: autoOrderNo,
+      remark: ''
+    });
+    setShowAddModal(true);
+  };
+
+  // 手動追加モーダル内で発注書番号を最新の連番に再計算
+  const handleRegenerateModalOrderNo = (targetDate?: string, targetCat?: OrderCategory) => {
+    const dateToUse = targetDate || newItem.orderDate || new Date().toISOString().split('T')[0];
+    const catToUse = targetCat || selectedCategory;
+    const autoNo = createAutoOrderNo(histories, selectedShip, catToUse, dateToUse);
+    setNewItem(prev => ({ ...prev, orderNo: autoNo }));
   };
 
   // 新規履歴の手動追加
@@ -242,6 +289,7 @@ export default function BudgetManager({
       quantity: Number(newItem.quantity) || 1,
       category: selectedCategory,
       orderDate: newItem.orderDate || new Date().toISOString().split('T')[0],
+      orderNo: newItem.orderNo.trim(),
       remark: newItem.remark || ''
     };
 
@@ -260,6 +308,7 @@ export default function BudgetManager({
       unit: '個',
       unitPrice: '',
       orderDate: new Date().toISOString().split('T')[0],
+      orderNo: '',
       remark: ''
     });
   };
@@ -335,7 +384,7 @@ export default function BudgetManager({
                 ¥ {categoryTotalAmount.toLocaleString()}
               </div>
               <div className="text-[11px] text-slate-400 mt-0.5">
-                （{selectedYear === 'ALL' ? '全年度' : `${selectedYear}年度`}{selectedMonth === 'ALL' ? '' : ` ${selectedMonth}月`} 実績合計 {filteredHistories.length}件）
+                （{selectedYear === 'ALL' ? '全年度' : `${selectedYear}年度`}{getSelectedMonthText(selectedMonth, selectedYear)} 実績合計 {filteredHistories.length}件）
               </div>
             </div>
           </div>
@@ -425,13 +474,18 @@ export default function BudgetManager({
                 onChange={e => setSelectedYear(e.target.value)}
               >
                 <option value="ALL">全ての年度</option>
-                {availableYears.map(yr => (
-                  <option key={yr} value={String(yr)}>{yr}年度 (令和{yr - 2018}年度)</option>
-                ))}
+                {availableYears.map(yr => {
+                  const reiwaYear = yr - 2018;
+                  return (
+                    <option key={yr} value={String(yr)}>
+                      {yr}年度 (令和{reiwaYear}年 / R{reiwaYear})
+                    </option>
+                  );
+                })}
               </select>
             </div>
 
-            {/* 月フィルター（新規追加） */}
+            {/* 月フィルター（4月〜翌3月の年度順＆西暦年明記） */}
             <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 shadow-2xs">
               <label className="text-xs font-semibold text-slate-600">月:</label>
               <select
@@ -440,9 +494,21 @@ export default function BudgetManager({
                 onChange={e => setSelectedMonth(e.target.value)}
               >
                 <option value="ALL">全期間 (すべての月)</option>
-                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(m => (
-                  <option key={m} value={String(m)}>{m}月</option>
-                ))}
+                {[4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3].map(m => {
+                  let label = `${m}月`;
+                  if (selectedYear !== 'ALL') {
+                    const baseYr = Number(selectedYear);
+                    const calYr = m >= 4 ? baseYr : baseYr + 1;
+                    label = `${calYr}年${m}月`;
+                  } else {
+                    label = m >= 4 ? `${m}月` : `翌年${m}月`;
+                  }
+                  return (
+                    <option key={m} value={String(m)}>
+                      {label}
+                    </option>
+                  );
+                })}
               </select>
             </div>
 
@@ -457,7 +523,7 @@ export default function BudgetManager({
             </button>
 
             <button
-              onClick={() => setShowAddModal(true)}
+              onClick={handleOpenAddModal}
               type="button"
               className="inline-flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold px-3 py-2 rounded-lg transition-colors cursor-pointer shadow-sm"
             >
@@ -597,7 +663,17 @@ export default function BudgetManager({
                           {item.orderDate || '-'}
                         </td>
                         <td className="py-2.5 px-3 font-mono text-slate-500 text-[11px]">
-                          {item.orderNo || '-'}
+                          {isEditing ? (
+                            <input
+                              type="text"
+                              placeholder="例: Run2026-B1"
+                              className="w-28 rounded border-indigo-300 px-1.5 py-1 font-mono text-xs font-bold text-indigo-950 bg-indigo-50/50"
+                              value={editOrderNo}
+                              onChange={e => setEditOrderNo(e.target.value)}
+                            />
+                          ) : (
+                            item.orderNo || '-'
+                          )}
                         </td>
                         <td className="py-2.5 px-3 font-semibold text-slate-800">
                           {item.equipmentName || '-'}
@@ -804,7 +880,7 @@ export default function BudgetManager({
                   予算集計表 プレビュー・印刷
                 </h3>
                 <p className="text-xs text-slate-500">
-                  【{selectedShip}】{selectedYear === 'ALL' ? '全年度' : `${selectedYear}年度`}{selectedMonth === 'ALL' ? '' : ` ${selectedMonth}月`} {ORDER_CATEGORY_TITLE_MAP[selectedCategory]} 発注実績集計
+                  【{selectedShip}】{selectedYear === 'ALL' ? '全年度' : `${selectedYear}年度`}{getSelectedMonthText(selectedMonth, selectedYear)} {ORDER_CATEGORY_TITLE_MAP[selectedCategory]} 発注実績集計
                 </p>
               </div>
 
@@ -832,7 +908,7 @@ export default function BudgetManager({
               <div className="text-center border-b-2 border-slate-800 pb-2">
                 <p className="text-[11px] font-bold text-slate-600 tracking-wider">株式会社イコーズ 船体部品・発注予算管理集計表</p>
                 <h1 className="text-xl font-extrabold tracking-wider mt-0.5">
-                  【{selectedShip}】 {selectedYear === 'ALL' ? '全期間' : `${selectedYear}年度`}{selectedMonth === 'ALL' ? '' : ` ${selectedMonth}月`} {ORDER_CATEGORY_TITLE_MAP[selectedCategory]} 集計表
+                  【{selectedShip}】 {selectedYear === 'ALL' ? '全期間' : `${selectedYear}年度`}{getSelectedMonthText(selectedMonth, selectedYear)} {ORDER_CATEGORY_TITLE_MAP[selectedCategory]} 集計表
                 </h1>
               </div>
 
@@ -840,7 +916,7 @@ export default function BudgetManager({
                 <div className="space-y-0.5">
                   <p>対象船舶: <span className="font-bold text-slate-900">{selectedShip}</span></p>
                   <p>分類: <span className="font-bold text-slate-900">{ORDER_CATEGORY_TITLE_MAP[selectedCategory]}</span></p>
-                  <p>対象期間: <span className="font-bold text-slate-900">{selectedYear === 'ALL' ? '全年度' : `${selectedYear}年度`}{selectedMonth === 'ALL' ? ' (全期間)' : ` ${selectedMonth}月`}</span></p>
+                  <p>対象期間: <span className="font-bold text-slate-900">{selectedYear === 'ALL' ? '全年度' : `${selectedYear}年度`}{getSelectedMonthText(selectedMonth, selectedYear) || ' (全期間)'}</span></p>
                 </div>
                 <div className="text-right space-y-0.5">
                   <p>出力日: {new Date().toLocaleDateString('ja-JP')}</p>
@@ -988,14 +1064,80 @@ export default function BudgetManager({
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">発注日付</label>
-                <input
-                  type="date"
-                  className="w-full rounded-md border-slate-300 px-2.5 py-1.5 text-xs"
-                  value={newItem.orderDate}
-                  onChange={e => setNewItem({ ...newItem, orderDate: e.target.value })}
-                />
+              {/* 発注日付 & 発注書番号設定 */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    発注日付 <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    className="w-full rounded-md border-slate-300 px-2.5 py-1.5 text-xs bg-white font-mono"
+                    value={newItem.orderDate}
+                    onChange={e => {
+                      const newDate = e.target.value;
+                      setNewItem({ ...newItem, orderDate: newDate });
+                      handleRegenerateModalOrderNo(newDate);
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-semibold text-slate-700">
+                      発注書番号 (orderNo)
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => handleRegenerateModalOrderNo()}
+                      className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-0.5 cursor-pointer"
+                      title="現在の船・分類・年度に基づき次の連番を自動算出"
+                    >
+                      <RefreshCw className="h-3 w-3" />
+                      最新連番
+                    </button>
+                  </div>
+
+                  {/* 分類記号クイック選択ボタン & テキスト入力 */}
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="text"
+                        placeholder="例: Run2026-B1"
+                        className="w-full rounded-md border-slate-300 px-2.5 py-1.5 text-xs font-mono font-bold text-indigo-950 bg-white"
+                        value={newItem.orderNo}
+                        onChange={e => setNewItem({ ...newItem, orderNo: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 分類記号選択の補助ラベル・クイック選択ボタン */}
+                <div className="sm:col-span-2 flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-200/80">
+                  <span className="font-medium text-slate-600">記号選択:</span>
+                  <div className="flex gap-1">
+                    {(['部品', '船用品', '潤滑油', '廃油処理'] as OrderCategory[]).map(cat => {
+                      const code = ORDER_CATEGORY_CODE_MAP[cat];
+                      const isCurrentCat = selectedCategory === cat;
+                      return (
+                        <button
+                          key={cat}
+                          type="button"
+                          onClick={() => handleRegenerateModalOrderNo(undefined, cat)}
+                          className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all cursor-pointer border ${
+                            isCurrentCat 
+                              ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs' 
+                              : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                          }`}
+                          title={`${cat} (${code}) の次の連番をセット`}
+                        >
+                          {code} ({cat})
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
 
               <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
