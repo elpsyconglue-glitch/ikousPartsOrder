@@ -316,9 +316,14 @@ export default function LoginModal() {
           {/* 2. 新規アカウント作成モード */}
           {authMode === 'signup' && (
             <form onSubmit={handleFirebaseSignUp} className="space-y-4">
-              <div className="bg-indigo-50 border border-indigo-200 p-3 rounded-xl text-xs text-indigo-900 leading-relaxed">
-                💡 <strong>ご自身のメールアドレスで実際のFirebaseアカウントを開通できます。</strong>
-                登録したアカウント情報はクラウドデータベースに安全に保護されます。
+              <div className="bg-emerald-50 border border-emerald-200 p-3.5 rounded-xl text-xs text-emerald-950 leading-relaxed shadow-xs">
+                <div className="font-bold text-emerald-900 flex items-center gap-1.5 mb-1">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                  <span>メール受信待ちは不要です（その場で登録完了）</span>
+                </div>
+                <span>
+                  お使いのメールアドレス・パスワード（6文字以上）・お名前を入力して「新規アカウントを作成」を押すと、メールの到着を待たずにその場でアカウント開通＆ログインが完了します。
+                </span>
               </div>
 
               <div>
@@ -444,6 +449,15 @@ export default function LoginModal() {
             <div>
               {step === 'email' && (
                 <form onSubmit={handleSendCode} className="space-y-4">
+                  <div className="bg-amber-50 border border-amber-200 p-3.5 rounded-xl text-xs text-amber-950 leading-relaxed shadow-xs">
+                    <div className="font-bold text-amber-900 flex items-center gap-1.5 mb-1">
+                      <KeyRound className="h-4 w-4 text-amber-600 shrink-0" />
+                      <span>メール受信は不要です（画面上にコードが表示されます）</span>
+                    </div>
+                    <span>
+                      メールアドレスとお名前を入力してボタンを押すと、画面上に6桁の認証コードが表示されます。そのコードを入力（または自動入力ボタン）するだけで簡単にログインできます。
+                    </span>
+                  </div>
                   <div>
                     <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
                       <Mail className="h-4 w-4 text-indigo-600" />
