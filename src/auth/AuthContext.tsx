@@ -249,19 +249,29 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       expiresAt: oneYearLater.toISOString(),
     };
 
-    // 2. Firestore 保存試行
-    if (isFirebaseSuccess) {
-      try {
-        await setDoc(doc(db, 'users', userId), newProfile);
-      } catch (fsErr) {
-        console.warn('Firestore setDoc notice:', fsErr);
-      }
+    // 2. Firestore 保存試行（可能な場合クラウドに保存）
+    try {
+      await setDoc(doc(db, 'users', userId), newProfile);
+    } catch (fsErr) {
+      console.warn('Firestore setDoc notice (using local storage):', fsErr);
     }
 
     // 3. アプリケーション状態更新＆ログイン完了
     setUser(newProfile);
-    localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(newProfile));
-    setAllUsers(prev => [newProfile, ...prev.filter(u => u.email.toLowerCase() !== cleanEmail)]);
+    try {
+      localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(newProfile));
+    } catch (e) {
+      console.warn('LocalStorage save notice:', e);
+    }
+    setAllUsers(prev => {
+      const updated = [newProfile, ...prev.filter(u => u.email.toLowerCase() !== cleanEmail)];
+      try {
+        localStorage.setItem('ship_budget_all_users_cache', JSON.stringify(updated));
+      } catch (e) {
+        console.warn('LocalStorage allUsers save notice:', e);
+      }
+      return updated;
+    });
 
     return {
       success: true,
