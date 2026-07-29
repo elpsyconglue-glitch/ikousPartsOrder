@@ -106,7 +106,7 @@ const STORAGE_KEY_USER = 'ikous_auth_user';
 const STORAGE_KEY_ALL_USERS = 'ikous_all_users_list';
 const STORAGE_KEY_GUEST_LOGS = 'ikous_guest_access_logs';
 
-// 初期デフォルトユーザーリスト（サンプルから井本等を削除）
+// 初期デフォルトユーザーリスト（未ログインアカウントは削除し、初回ログイン時に自動生成・同期）
 const INITIAL_USERS: UserProfile[] = [
   {
     id: 'usr_oono',
@@ -114,39 +114,6 @@ const INITIAL_USERS: UserProfile[] = [
     email: 'r-oono@ikous.co.jp',
     department: '株式会社イコーズ 工務部',
     role: '管理者',
-    status: 'active',
-    createdAt: new Date('2026-01-01').toISOString(),
-    lastVerifiedAt: new Date().toISOString(),
-    expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
-  },
-  {
-    id: 'usr_isaka',
-    name: '伊坂 博樹',
-    email: 'isaka@ikous.co.jp',
-    department: '株式会社イコーズ 工務部',
-    role: '一般ユーザー',
-    status: 'active',
-    createdAt: new Date('2026-01-01').toISOString(),
-    lastVerifiedAt: new Date().toISOString(),
-    expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
-  },
-  {
-    id: 'usr_murakami',
-    name: '村上 愛子',
-    email: 'murakami@ikous.co.jp',
-    department: '株式会社イコーズ 工務部',
-    role: '一般ユーザー',
-    status: 'active',
-    createdAt: new Date('2026-01-01').toISOString(),
-    lastVerifiedAt: new Date().toISOString(),
-    expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
-  },
-  {
-    id: 'usr_miwa',
-    name: '三輪 大真',
-    email: 'miwa@ikous.co.jp',
-    department: '株式会社イコーズ 工務部',
-    role: '一般ユーザー',
     status: 'active',
     createdAt: new Date('2026-01-01').toISOString(),
     lastVerifiedAt: new Date().toISOString(),
