@@ -6,6 +6,7 @@ import { generateOrderNo as createAutoOrderNo } from '../utils/orderNoHelper';
 import PriceRevisionModal from './PriceRevisionModal';
 import ProtectedActionModal from './ProtectedActionModal';
 import ShipManagementModal from './ShipManagementModal';
+import { useAuth } from '../auth/AuthContext';
 import { 
   Ship, 
   ChevronDown, 
@@ -24,9 +25,9 @@ import {
   ArrowRight,
   FileCheck,
   Settings,
-  RefreshCw
+  RefreshCw,
+  Lock
 } from 'lucide-react';
-
 
 interface BudgetManagerProps {
   histories: PartHistory[];
@@ -41,6 +42,7 @@ export default function BudgetManager({
   shipNames = DEFAULT_SHIP_NAMES,
   onShipNamesChange
 }: BudgetManagerProps) {
+  const { isAdmin, isReadOnly } = useAuth();
   const activeShipNames = shipNames && shipNames.length > 0 ? shipNames : DEFAULT_SHIP_NAMES;
 
   // 選択されている船（デフォルトは先頭の船）
@@ -403,12 +405,23 @@ export default function BudgetManager({
 
           <button
             type="button"
-            onClick={() => setShowShipManagementModal(true)}
-            className="inline-flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold px-3 py-1.5 rounded-xl border border-indigo-200/80 transition-all cursor-pointer shadow-2xs"
-            title="管理船舶の追加や削除（退役・管理終了）を行います"
+            onClick={() => {
+              if (!isAdmin) {
+                alert('【権限エラー】船の新規追加・削除操作は「管理者」権限が必要です。');
+                return;
+              }
+              setShowShipManagementModal(true);
+            }}
+            className={`inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl border transition-all cursor-pointer shadow-2xs ${
+              isAdmin 
+                ? 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200/80' 
+                : 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200'
+            }`}
+            title={isAdmin ? "管理船舶の追加や削除（退役・管理終了）を行います" : "船名の追加・削除は管理者専用です"}
           >
             <Settings className="h-3.5 w-3.5 text-indigo-600" />
             <span>船名の管理（追加・削除）</span>
+            {!isAdmin && <span className="text-[9px] bg-slate-200 text-slate-600 px-1 py-0.2 rounded">管理者限定</span>}
           </button>
         </div>
         
@@ -522,14 +535,16 @@ export default function BudgetManager({
               価格改定PDF資料
             </button>
 
-            <button
-              onClick={handleOpenAddModal}
-              type="button"
-              className="inline-flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold px-3 py-2 rounded-lg transition-colors cursor-pointer shadow-sm"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              実績を手動追加
-            </button>
+            {!isReadOnly && (
+              <button
+                onClick={handleOpenAddModal}
+                type="button"
+                className="inline-flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold px-3 py-2 rounded-lg transition-colors cursor-pointer shadow-sm"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                実績を手動追加
+              </button>
+            )}
 
             <button
               onClick={() => setShowPrintModal(true)}
@@ -540,25 +555,29 @@ export default function BudgetManager({
               予算集計表を印刷/PDF保存
             </button>
 
-            <button
-              onClick={handleCleanUnorderedMasterData}
-              type="button"
-              className="inline-flex items-center gap-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-bold px-3 py-2 rounded-lg transition-colors cursor-pointer shadow-sm"
-              title="CSV等で取り込んだ未発注のマスタデータを完全に消去・除外します"
-            >
-              <Trash2 className="h-3.5 w-3.5 text-amber-600" />
-              未発注マスタ消去
-            </button>
+            {isAdmin && (
+              <>
+                <button
+                  onClick={handleCleanUnorderedMasterData}
+                  type="button"
+                  className="inline-flex items-center gap-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-bold px-3 py-2 rounded-lg transition-colors cursor-pointer shadow-sm"
+                  title="CSV等で取り込んだ未発注のマスタデータを完全に消去・除外します"
+                >
+                  <Trash2 className="h-3.5 w-3.5 text-amber-600" />
+                  未発注マスタ消去
+                </button>
 
-            <button
-              onClick={handleClearAll}
-              type="button"
-              className="inline-flex items-center gap-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold px-3 py-2 rounded-lg transition-colors cursor-pointer shadow-sm"
-              title="予算集計・発注履歴の全データを初期化削除します"
-            >
-              <Trash2 className="h-3.5 w-3.5 text-rose-600" />
-              全履歴クリア
-            </button>
+                <button
+                  onClick={handleClearAll}
+                  type="button"
+                  className="inline-flex items-center gap-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold px-3 py-2 rounded-lg transition-colors cursor-pointer shadow-sm"
+                  title="予算集計・発注履歴の全データを初期化削除します"
+                >
+                  <Trash2 className="h-3.5 w-3.5 text-rose-600" />
+                  全履歴クリア
+                </button>
+              </>
+            )}
           </div>
         </div>
 
@@ -740,7 +759,9 @@ export default function BudgetManager({
 
                         {/* 操作ボタン */}
                         <td className="py-2.5 px-3 text-center">
-                          {isEditing ? (
+                          {isReadOnly ? (
+                            <span className="text-[10px] text-slate-400 font-medium">閲覧のみ</span>
+                          ) : isEditing ? (
                             <div className="flex items-center justify-center gap-1">
                               <button
                                 onClick={() => handleSaveEdit(item.id)}

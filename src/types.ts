@@ -1,3 +1,5 @@
+export type UserRole = '管理者' | '一般ユーザー' | '閲覧のみ';
+
 export interface PartHistory {
   id: string;
   shipName: string;       // 船名

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { PartHistory, OrderItem, OrderHeader, STAFF_LIST, StaffName, OrderCategory, ORDER_CATEGORY_TITLE_MAP } from '../types';
 import { DEFAULT_SHIP_NAMES } from '../defaultData';
-import { Plus, Trash2, Settings, HelpCircle, ChevronDown, ChevronUp, RefreshCw, FileText } from 'lucide-react';
+import { Plus, Trash2, Settings, HelpCircle, ChevronDown, ChevronUp, RefreshCw, FileText, Lock, AlertCircle } from 'lucide-react';
+import { useAuth } from '../auth/AuthContext';
 
 import { generateOrderNo as createAutoOrderNo } from '../utils/orderNoHelper';
 
@@ -24,6 +25,7 @@ export default function OrderForm({
   onPreviewClick,
   shipNames = DEFAULT_SHIP_NAMES
 }: OrderFormProps) {
+  const { isReadOnly } = useAuth();
   const [activeRowDetails, setActiveRowDetails] = useState<string | null>(null);
   const [partNameSuggestions, setPartNameSuggestions] = useState<string[]>([]);
   const [focusedRowId, setFocusedRowId] = useState<string | null>(null);
@@ -296,8 +298,37 @@ export default function OrderForm({
 
   return (
     <div className="space-y-6">
+      {/* 閲覧のみ権限バナー */}
+      {isReadOnly && (
+        <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 flex items-center justify-between text-amber-900 shadow-sm animate-fadeIn">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-amber-200 text-amber-800 rounded-lg">
+              <Lock className="h-5 w-5" />
+            </div>
+            <div>
+              <h4 className="font-bold text-xs flex items-center gap-2">
+                <span>【閲覧のみ権限モード】</span>
+                <span className="text-[10px] bg-amber-200 text-amber-900 px-2 py-0.5 rounded font-mono">
+                  閲覧のみアカウント
+                </span>
+              </h4>
+              <p className="text-xs text-amber-800 mt-0.5">
+                現在のアカウントは「閲覧のみ」権限です。発注書の新規作成・内容編集はできません。印刷プレビューおよび履歴管理の閲覧・印刷機能をご利用いただけます。
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onPreviewClick}
+            className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer shrink-0"
+          >
+            現在の発注書を印刷・プレビュー
+          </button>
+        </div>
+      )}
+
       {/* 1. 共通基本情報フォーム */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+      <div className={`bg-white rounded-xl border border-slate-200 shadow-sm p-6 ${isReadOnly ? 'opacity-80 pointer-events-none' : ''}`}>
         <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-4">
           <h2 className="text-base font-semibold text-slate-800 flex items-center gap-2">
             <FileText className="h-4.5 w-4.5 text-indigo-600" />

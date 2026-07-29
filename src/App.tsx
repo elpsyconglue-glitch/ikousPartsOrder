@@ -19,7 +19,7 @@ import UserManagementModal from './components/UserManagementModal';
 import Logo from './components/Logo';
 
 function AppContent() {
-  const { isAuthenticated, user, logout, daysUntilExpiration, simulateExpireAccount } = useAuth();
+  const { isAuthenticated, user, logout, daysUntilExpiration, simulateExpireAccount, isAdmin, isReadOnly } = useAuth();
 
   const [histories, setHistories] = useState<PartHistory[]>([]);
   const [shipNames, setShipNames] = useState<string[]>(() => getShipNames());
@@ -92,15 +92,21 @@ function AppContent() {
 
           {/* 右側：ログインユーザー＆ナビゲーション */}
           <div className="flex items-center gap-3 flex-wrap">
-            {/* ログインユーザー情報＆有効期限バッジ */}
+            {/* ログインユーザー情報＆権限バッジ */}
             {user && (
               <div className="flex items-center gap-2 bg-slate-800/90 border border-indigo-500/30 px-3 py-1.5 rounded-xl text-xs">
                 <UserCheck className="h-4 w-4 text-emerald-400 shrink-0" />
                 <div className="leading-tight">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5">
                     <span className="font-bold text-white">{user.name}</span>
-                    <span className="text-[10px] bg-emerald-950 text-emerald-300 border border-emerald-800 px-1.5 py-0.2 rounded font-mono">
-                      認証有効 (残り{daysUntilExpiration ?? 365}日)
+                    <span className={`text-[10px] px-1.5 py-0.2 rounded font-bold ${
+                      isAdmin 
+                        ? 'bg-indigo-900 text-indigo-200 border border-indigo-700' 
+                        : isReadOnly
+                        ? 'bg-slate-700 text-slate-300 border border-slate-600'
+                        : 'bg-blue-900 text-blue-200 border border-blue-700'
+                    }`}>
+                      {user.role}
                     </span>
                   </div>
                   <p className="text-[10px] text-slate-400">{user.email}</p>
@@ -139,18 +145,24 @@ function AppContent() {
 
             {/* 社員・アカウント権限管理ボタン (管理者・担当者用) */}
             <button
-              onClick={() => setShowUserManagementModal(true)}
+              onClick={() => {
+                if (!isAdmin) {
+                  alert('【権限エラー】社員・アカウント権限管理画面を開くには「管理者」権限が必要です。（大野様など管理者が変更可能です）');
+                  return;
+                }
+                setShowUserManagementModal(true);
+              }}
               type="button"
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-sm ${
-                user?.role === 'システム管理者'
+                isAdmin
                   ? 'bg-indigo-600 hover:bg-indigo-500 text-white border border-indigo-400/40'
-                  : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700'
+                  : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'
               }`}
-              title="退職者アカウントの停止（権限削除）や管理者権限の付与・管理"
+              title={isAdmin ? "退職者アカウントの停止や各社員の権限設定（閲覧のみ/一般/管理者）を変更" : "権限管理コンソール（管理者限定）"}
             >
               <Users className="h-4 w-4 text-indigo-300" />
               <span>社員・権限管理</span>
-              {user?.role === 'システム管理者' && (
+              {isAdmin && (
                 <span className="text-[9px] bg-indigo-900 text-indigo-200 px-1.5 py-0.2 rounded font-mono">
                   管理者
                 </span>

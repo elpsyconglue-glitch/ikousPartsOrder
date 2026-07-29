@@ -11,17 +11,48 @@ import {
   setDoc, 
   getDoc 
 } from '../lib/firebase';
+import { UserRole } from '../types';
 
 export interface UserProfile {
   id: string;
   name: string;
   email: string;
   department: string;
-  role: 'システム管理者' | '一般ユーザー';
+  role: UserRole;
   status: 'active' | 'suspended'; // active: 通常利用可能, suspended: 離職・異動等による停止
   createdAt: string;     // アカウント開通日 (ISO string)
   lastVerifiedAt: string;// 最終メール認証日 (ISO string)
   expiresAt: string;     // 年次認証期限 (1年後 ISO string)
+}
+
+/**
+ * 初期ロール自動判定ルール:
+ * - 大野隆太様 (名前: 大野, email: oono/r-oono/imoto/admin等): 『管理者』
+ * - 伊坂博樹様, 村上愛子様, 三輪大真様 (名前/email: isaka, murakami, miwa等): 『一般ユーザー』
+ * - それ以外の全ユーザー (他社員・新規アカウント等): 基本 『閲覧のみ』 (管理者が後から自由に昇格変更可能)
+ */
+export function getInitialRoleForUser(name: string, email: string): UserRole {
+  const cleanEmail = email.toLowerCase().trim();
+  const cleanName = name.trim();
+
+  if (
+    cleanName.includes('大野') || 
+    cleanEmail.includes('oono') || 
+    cleanEmail.startsWith('imoto') || 
+    cleanEmail.startsWith('admin')
+  ) {
+    return '管理者';
+  }
+
+  if (
+    cleanName.includes('伊坂') || cleanEmail.includes('isaka') ||
+    cleanName.includes('村上') || cleanEmail.includes('murakami') ||
+    cleanName.includes('三輪') || cleanEmail.includes('miwa')
+  ) {
+    return '一般ユーザー';
+  }
+
+  return '閲覧のみ';
 }
 
 interface PendingVerification {
@@ -48,9 +79,14 @@ interface AuthContextType {
   isAccountExpired: boolean;
   daysUntilExpiration: number | null;
   
+  // 権限ヘルパー
+  isAdmin: boolean;
+  isReadOnly: boolean;
+
   // 管理者専用機能
   suspendUser: (email: string) => void;
   activateUser: (email: string) => void;
+  updateUserRole: (email: string, newRole: UserRole) => void;
   toggleAdminRole: (email: string) => void;
   deleteUser: (email: string) => void;
   toggleMyRoleForDemo: () => void; // テスト用ロール切替
@@ -59,38 +95,60 @@ interface AuthContextType {
 const STORAGE_KEY_USER = 'ikous_auth_user';
 const STORAGE_KEY_ALL_USERS = 'ikous_all_users_list';
 
-// 初期デフォルトユーザーリスト（サンプル）
+// 初期デフォルトユーザーリスト
 const INITIAL_USERS: UserProfile[] = [
   {
-    id: 'usr_admin',
-    name: '井本 尚',
-    email: 'imoto@ikous.co.jp',
-    department: '株式会社イコーズ 役員・管理部',
-    role: 'システム管理者',
+    id: 'usr_oono',
+    name: '大野 隆太',
+    email: 'r-oono@ikous.co.jp',
+    department: '株式会社イコーズ 工務部',
+    role: '管理者',
     status: 'active',
     createdAt: new Date('2026-01-01').toISOString(),
     lastVerifiedAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
   },
   {
-    id: 'usr_yamada',
-    name: '山田 太郎',
-    email: 'yamada@ikous.co.jp',
+    id: 'usr_isaka',
+    name: '伊坂 博樹',
+    email: 'isaka@ikous.co.jp',
     department: '株式会社イコーズ 工務部',
     role: '一般ユーザー',
     status: 'active',
-    createdAt: new Date('2026-02-15').toISOString(),
+    createdAt: new Date('2026-01-01').toISOString(),
     lastVerifiedAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
   },
   {
-    id: 'usr_sato',
-    name: '佐藤 次郎',
-    email: 'sato@ikous.co.jp',
-    department: '株式会社イコーズ 運航部',
+    id: 'usr_murakami',
+    name: '村上 愛子',
+    email: 'murakami@ikous.co.jp',
+    department: '株式会社イコーズ 工務部',
     role: '一般ユーザー',
     status: 'active',
-    createdAt: new Date('2026-03-01').toISOString(),
+    createdAt: new Date('2026-01-01').toISOString(),
+    lastVerifiedAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'usr_miwa',
+    name: '三輪 大真',
+    email: 'miwa@ikous.co.jp',
+    department: '株式会社イコーズ 工務部',
+    role: '一般ユーザー',
+    status: 'active',
+    createdAt: new Date('2026-01-01').toISOString(),
+    lastVerifiedAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'usr_admin',
+    name: '井本 尚',
+    email: 'imoto@ikous.co.jp',
+    department: '株式会社イコーズ 役員・管理部',
+    role: '管理者',
+    status: 'active',
+    createdAt: new Date('2026-01-01').toISOString(),
     lastVerifiedAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
   }
@@ -138,13 +196,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             // Firestore ドキュメントがまだ存在しない場合、デフォルト作成
             const now = new Date();
             const oneYearLater = new Date(now.getTime() + ONE_YEAR_MS);
-            const isAdminByEmail = fbUser.email.startsWith('imoto') || fbUser.email.startsWith('admin');
+            const initialRole = getInitialRoleForUser(fbUser.displayName || '', fbUser.email);
             const newProfile: UserProfile = {
               id: fbUser.uid,
               name: fbUser.displayName || fbUser.email.split('@')[0],
               email: fbUser.email,
               department: '株式会社イコーズ 工務部',
-              role: isAdminByEmail ? 'システム管理者' : '一般ユーザー',
+              role: initialRole,
               status: 'active',
               createdAt: now.toISOString(),
               lastVerifiedAt: now.toISOString(),
@@ -174,6 +232,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
     }
   }, [allUsers]);
+
+  // 権限フラグ
+  const isAdmin = user?.role === '管理者' || (user?.role as string) === 'システム管理者';
+  const isReadOnly = user?.role === '閲覧のみ';
 
   // アカウントが1年経過して期限切れかどうかチェック
   const isAccountExpired = React.useMemo(() => {
@@ -213,7 +275,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     const now = new Date();
     const oneYearLater = new Date(now.getTime() + ONE_YEAR_MS);
-    const isAdminByEmail = cleanEmail.startsWith('imoto') || cleanEmail.startsWith('admin');
+    const assignedName = name.trim() || cleanEmail.split('@')[0];
+    const initialRole = getInitialRoleForUser(assignedName, cleanEmail);
 
     let userId = 'usr_' + Date.now();
     let isFirebaseSuccess = false;
@@ -239,10 +302,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     const newProfile: UserProfile = {
       id: userId,
-      name: name.trim() || cleanEmail.split('@')[0],
+      name: assignedName,
       email: cleanEmail,
       department: department || '株式会社イコーズ 工務部',
-      role: isAdminByEmail ? 'システム管理者' : '一般ユーザー',
+      role: initialRole,
       status: 'active',
       createdAt: now.toISOString(),
       lastVerifiedAt: now.toISOString(),
@@ -273,9 +336,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return updated;
     });
 
+    const roleGuide = initialRole === '管理者' ? '【管理者】' : initialRole === '一般ユーザー' ? '【一般ユーザー】' : '【閲覧のみ】';
+
     return {
       success: true,
-      message: 'アカウント作成が完了し、即時ログインしました！（1年間有効）'
+      message: `アカウント作成が完了し、即時ログインしました！ 初期権限: ${roleGuide}`
     };
   };
 
@@ -300,13 +365,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         } else {
           const now = new Date();
           const oneYearLater = new Date(now.getTime() + ONE_YEAR_MS);
-          const isAdminByEmail = cleanEmail.startsWith('imoto') || cleanEmail.startsWith('admin');
+          const initialRole = getInitialRoleForUser('', cleanEmail);
           currentProfile = {
             id: fbUser.uid,
             name: cleanEmail.split('@')[0],
             email: cleanEmail,
             department: '株式会社イコーズ 工務部',
-            role: isAdminByEmail ? 'システム管理者' : '一般ユーザー',
+            role: initialRole,
             status: 'active',
             createdAt: now.toISOString(),
             lastVerifiedAt: now.toISOString(),
@@ -324,7 +389,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           name: cleanEmail.split('@')[0],
           email: cleanEmail,
           department: '株式会社イコーズ 工務部',
-          role: cleanEmail.startsWith('imoto') ? 'システム管理者' : '一般ユーザー',
+          role: getInitialRoleForUser('', cleanEmail),
           status: 'active',
           createdAt: now.toISOString(),
           lastVerifiedAt: now.toISOString(),
@@ -468,14 +533,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       newAllUsers[existingIndex] = updatedUser;
       setAllUsers(newAllUsers);
     } else {
-      const isAdminByEmail = pendingVerification.email.startsWith('imoto') || pendingVerification.email.startsWith('admin');
+      const initialRole = getInitialRoleForUser(pendingVerification.name, pendingVerification.email);
       
       updatedUser = {
         id: `usr_${Date.now()}`,
         name: pendingVerification.name,
         email: pendingVerification.email,
         department: '株式会社イコーズ 工務部',
-        role: isAdminByEmail ? 'システム管理者' : '一般ユーザー',
+        role: initialRole,
         status: 'active',
         createdAt: now.toISOString(),
         lastVerifiedAt: now.toISOString(),
@@ -530,10 +595,21 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }));
   };
 
+  // ユーザーロール指定変更
+  const updateUserRole = (targetEmail: string, newRole: UserRole) => {
+    setAllUsers(prev => prev.map(u => {
+      if (u.email.toLowerCase() === targetEmail.toLowerCase()) {
+        return { ...u, role: newRole };
+      }
+      return u;
+    }));
+  };
+
   const toggleAdminRole = (targetEmail: string) => {
     setAllUsers(prev => prev.map(u => {
       if (u.email.toLowerCase() === targetEmail.toLowerCase()) {
-        const newRole = u.role === 'システム管理者' ? '一般ユーザー' : 'システム管理者';
+        const currentIsAdmin = u.role === '管理者' || (u.role as string) === 'システム管理者';
+        const newRole: UserRole = currentIsAdmin ? '一般ユーザー' : '管理者';
         return { ...u, role: newRole };
       }
       return u;
@@ -544,10 +620,19 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setAllUsers(prev => prev.filter(u => u.email.toLowerCase() !== targetEmail.toLowerCase()));
   };
 
+  // デモ用ロール循環切り替え (管理者 ➔ 一般ユーザー ➔ 閲覧のみ ➔ 管理者)
   const toggleMyRoleForDemo = () => {
     if (!user) return;
-    const newRole = user.role === 'システム管理者' ? '一般ユーザー' : 'システム管理者';
-    const updated = { ...user, role: newRole };
+    let nextRole: UserRole = '一般ユーザー';
+    if (user.role === '管理者' || (user.role as string) === 'システム管理者') {
+      nextRole = '一般ユーザー';
+    } else if (user.role === '一般ユーザー') {
+      nextRole = '閲覧のみ';
+    } else {
+      nextRole = '管理者';
+    }
+
+    const updated: UserProfile = { ...user, role: nextRole };
     setUser(updated);
     setAllUsers(prev => prev.map(u => u.email.toLowerCase() === user.email.toLowerCase() ? updated : u));
   };
@@ -576,8 +661,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         simulateExpireAccount,
         isAccountExpired,
         daysUntilExpiration,
+        isAdmin,
+        isReadOnly,
         suspendUser,
         activateUser,
+        updateUserRole,
         toggleAdminRole,
         deleteUser,
         toggleMyRoleForDemo,
