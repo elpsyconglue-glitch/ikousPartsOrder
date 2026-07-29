@@ -21,29 +21,25 @@ import {
 export default function LoginModal() {
   const { 
     user, 
-    pendingVerification, 
-    sendVerificationCode, 
-    verifyCodeAndLogin, 
     signUpWithFirebase,
     signInWithFirebase,
     sendPasswordReset,
+    loginAsGuest,
     isAccountExpired, 
   } = useAuth();
 
   // モード選択
-  const [authMode, setAuthMode] = useState<'signin' | 'signup' | 'otp' | 'reset'>('signin');
+  const [authMode, setAuthMode] = useState<'signin' | 'signup' | 'guest' | 'reset'>('signin');
 
   // 入力フォーム状態
   const [emailInput, setEmailInput] = useState<string>(user?.email || '');
   const [passwordInput, setPasswordInput] = useState<string>('');
   const [nameInput, setNameInput] = useState<string>(user?.name || '');
   const [departmentInput, setDepartmentInput] = useState<string>('株式会社イコーズ 工務部');
-  const [codeInput, setCodeInput] = useState<string>('');
+  const [guestNameInput, setGuestNameInput] = useState<string>('');
   
   // UI メッセージ・状態
-  const [step, setStep] = useState<'email' | 'code'>(pendingVerification ? 'code' : 'email');
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
-  const [demoCodeNotice, setDemoCodeNotice] = useState<string | null>(pendingVerification?.code || null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [showGuideModal, setShowGuideModal] = useState<boolean>(false);
 
@@ -107,58 +103,24 @@ export default function LoginModal() {
     }
   };
 
-  // 4. ワンタイムコード送信処理（デモ・簡易ログイン用）
-  const handleSendCode = async (e: React.FormEvent) => {
+  // 4. ゲスト簡易ログイン処理
+  const handleGuestLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setStatusMessage(null);
     setIsSubmitting(true);
 
     try {
-      const res = await sendVerificationCode(emailInput, nameInput);
+      const res = await loginAsGuest(guestNameInput);
       if (res.success) {
-        setStep('code');
         setStatusMessage({ type: 'success', text: res.message });
-        if (res.demoCode) {
-          setDemoCodeNotice(res.demoCode);
-        }
       } else {
         setStatusMessage({ type: 'error', text: res.message });
       }
     } catch {
-      setStatusMessage({ type: 'error', text: '認証コード送信処理に失敗しました。' });
+      setStatusMessage({ type: 'error', text: 'ゲストログイン処理に失敗しました。' });
     } finally {
       setIsSubmitting(false);
     }
-  };
-
-  // ワンタイムコード検証・ログイン処理
-  const handleVerifyCode = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!codeInput) {
-      setStatusMessage({ type: 'error', text: '6桁の認証コードを入力してください。' });
-      return;
-    }
-
-    const res = verifyCodeAndLogin(codeInput);
-    if (res.success) {
-      setStatusMessage({ type: 'success', text: res.message });
-    } else {
-      setStatusMessage({ type: 'error', text: res.message });
-    }
-  };
-
-  // デモコード自動入力
-  const handleAutoFillDemoCode = () => {
-    if (demoCodeNotice) {
-      setCodeInput(demoCodeNotice);
-    }
-  };
-
-  // 担当者プリセット選択
-  const handleSelectPresetStaff = (staffName: string) => {
-    setNameInput(staffName);
-    const mockEmail = `${staffName.toLowerCase().replace(/\s+/g, '')}@ikous.co.jp`;
-    setEmailInput(mockEmail);
   };
 
   return (
@@ -207,15 +169,15 @@ export default function LoginModal() {
           </button>
           <button
             type="button"
-            onClick={() => { setAuthMode('otp'); setStatusMessage(null); }}
+            onClick={() => { setAuthMode('guest'); setStatusMessage(null); }}
             className={`flex-1 py-3 px-2 flex items-center justify-center gap-1.5 border-b-2 transition-all cursor-pointer ${
-              authMode === 'otp'
+              authMode === 'guest'
                 ? 'border-indigo-600 text-indigo-600 bg-white'
                 : 'border-transparent hover:bg-slate-100 text-slate-500'
             }`}
           >
-            <KeyRound className="h-4 w-4 text-amber-600" />
-            <span>コード簡易認証</span>
+            <UserCheck className="h-4 w-4 text-emerald-600" />
+            <span>簡易ゲストログイン</span>
           </button>
         </div>
 
@@ -449,149 +411,52 @@ export default function LoginModal() {
             </form>
           )}
 
-          {/* 4. ワンタイムコード・デモ簡易認証モード */}
-          {authMode === 'otp' && (
-            <div>
-              {step === 'email' && (
-                <form onSubmit={handleSendCode} className="space-y-4">
-                  <div className="bg-amber-50 border border-amber-200 p-3.5 rounded-xl text-xs text-amber-950 leading-relaxed shadow-xs">
-                    <div className="font-bold text-amber-900 flex items-center gap-1.5 mb-1">
-                      <KeyRound className="h-4 w-4 text-amber-600 shrink-0" />
-                      <span>メール受信は不要です（画面上にコードが表示されます）</span>
-                    </div>
-                    <span>
-                      メールアドレスとお名前を入力してボタンを押すと、画面上に6桁の認証コードが表示されます。そのコードを入力（または自動入力ボタン）するだけで簡単にログインできます。
-                    </span>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
-                      <Mail className="h-4 w-4 text-indigo-600" />
-                      <span>会社メールアドレス</span>
-                      <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="email"
-                      required
-                      placeholder="yamada@ikous.co.jp"
-                      value={emailInput}
-                      onChange={e => setEmailInput(e.target.value)}
-                      className="w-full text-xs font-semibold px-3.5 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 bg-slate-50 focus:bg-white"
-                    />
-                  </div>
+          {/* 4. 簡易ゲストログインモード */}
+          {authMode === 'guest' && (
+            <form onSubmit={handleGuestLoginSubmit} className="space-y-4">
+              <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-xs text-slate-700 leading-relaxed shadow-xs space-y-2">
+                <div className="font-bold text-slate-900 flex items-center gap-1.5 text-sm">
+                  <UserCheck className="h-4 w-4 text-emerald-600 shrink-0" />
+                  <span>パスワード不要・1クリック即時ログイン</span>
+                </div>
+                <p className="text-slate-600 text-[11px]">
+                  ID・パスワードなしでどなたでもゲストとして画面・予算データを閲覧できます。
+                </p>
+                <div className="bg-amber-50 border border-amber-200 text-amber-900 text-[11px] p-2.5 rounded-lg font-medium space-y-1">
+                  <p className="font-bold text-amber-950 flex items-center gap-1">
+                    <span>⚠️ ゲスト権限の制限事項</span>
+                  </p>
+                  <p>・発注書の作成および内容の編集・削除はできません。</p>
+                  <p className="font-bold text-rose-800">・印刷・PDFプレビュー出力はできません（画面閲覧のみ）。</p>
+                  <p>・ログイン日時および識別アドレスは管理者の監査ログに自動記録されます。</p>
+                </div>
+              </div>
 
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
-                      <UserCheck className="h-4 w-4 text-indigo-600" />
-                      <span>お名前（担当者名）</span>
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="山田 太郎"
-                      value={nameInput}
-                      onChange={e => setNameInput(e.target.value)}
-                      className="w-full text-xs font-semibold px-3.5 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 bg-slate-50 focus:bg-white"
-                    />
-                  </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  お名前・部署名（任意入力）
+                </label>
+                <input
+                  type="text"
+                  placeholder="例: 見学ゲスト / 横浜営業所"
+                  value={guestNameInput}
+                  onChange={e => setGuestNameInput(e.target.value)}
+                  className="w-full text-xs font-semibold px-3.5 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 bg-slate-50 focus:bg-white"
+                />
+              </div>
 
-                  {/* 担当者プリセット */}
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-500 mb-1">
-                      社内サンプル担当者クイック選択:
-                    </label>
-                    <div className="flex flex-wrap gap-1.5">
-                      {STAFF_LIST.slice(0, 5).map(staff => (
-                        <button
-                          key={staff}
-                          type="button"
-                          onClick={() => handleSelectPresetStaff(staff)}
-                          className={`text-[11px] px-2.5 py-1 rounded-lg border transition-colors cursor-pointer ${
-                            nameInput === staff 
-                              ? 'bg-indigo-600 text-white border-indigo-600 font-bold' 
-                              : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border-slate-200'
-                          }`}
-                        >
-                          {staff}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="pt-2">
-                    <button
-                      type="submit"
-                      disabled={isSubmitting}
-                      className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-xl transition-all shadow-md text-xs cursor-pointer disabled:opacity-50"
-                    >
-                      <Mail className="h-4 w-4" />
-                      <span>ワンタイムコードを送信</span>
-                      <ArrowRight className="h-4 w-4" />
-                    </button>
-                  </div>
-                </form>
-              )}
-
-              {step === 'code' && (
-                <form onSubmit={handleVerifyCode} className="space-y-4">
-                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs space-y-1">
-                    <p className="text-slate-600">
-                      送信先アドレス: <span className="font-bold text-slate-900">{emailInput}</span>
-                    </p>
-                  </div>
-
-                  {demoCodeNotice && (
-                    <div className="bg-amber-50 border border-amber-300 p-3 rounded-xl flex items-center justify-between">
-                      <div>
-                        <p className="text-[11px] font-bold text-amber-900">【確認用コード】</p>
-                        <p className="text-lg font-mono font-extrabold text-amber-900 tracking-widest mt-0.5">
-                          {demoCodeNotice}
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={handleAutoFillDemoCode}
-                        className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer"
-                      >
-                        自動入力
-                      </button>
-                    </div>
-                  )}
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
-                      <KeyRound className="h-4 w-4 text-indigo-600" />
-                      <span>6桁のワンタイム認証コード</span>
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      maxLength={6}
-                      placeholder="123456"
-                      value={codeInput}
-                      onChange={e => setCodeInput(e.target.value)}
-                      className="w-full text-center text-lg font-mono tracking-widest font-extrabold py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 bg-white"
-                    />
-                  </div>
-
-                  <div className="flex gap-2 pt-2">
-                    <button
-                      type="button"
-                      onClick={() => setStep('email')}
-                      className="flex-1 py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-colors cursor-pointer"
-                    >
-                      戻る
-                    </button>
-                    <button
-                      type="submit"
-                      className="flex-[2] py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition-colors shadow-md cursor-pointer flex items-center justify-center gap-2"
-                    >
-                      <CheckCircle2 className="h-4 w-4" />
-                      <span>認証完了・ログイン</span>
-                    </button>
-                  </div>
-                </form>
-              )}
-            </div>
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="w-full flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 px-6 rounded-xl transition-all shadow-md text-xs cursor-pointer disabled:opacity-50"
+                >
+                  <UserCheck className="h-4 w-4 text-emerald-400" />
+                  <span>ゲストとしてログイン（閲覧専用）</span>
+                  <ArrowRight className="h-4 w-4" />
+                </button>
+              </div>
+            </form>
           )}
 
           {/* 1年更新ルール・ガイドライン */}

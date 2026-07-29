@@ -1,4 +1,14 @@
-export type UserRole = '管理者' | '一般ユーザー' | '閲覧のみ';
+export type UserRole = '管理者' | '一般ユーザー' | '閲覧のみ' | 'ゲスト';
+
+export interface GuestAccessLog {
+  id: string;
+  guestId: string;
+  guestName: string;
+  email: string;
+  loginAt: string;
+  formattedLoginAt: string;
+  userAgent?: string;
+}
 
 export interface PartHistory {
   id: string;

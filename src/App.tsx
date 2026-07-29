@@ -235,8 +235,8 @@ function AppContent() {
             {/* 各タブの切り替え */}
             {activeTab === 'form' && (
               <div className="space-y-6">
-                {/* ユーザーガイド */}
-                <div className="bg-indigo-50/50 border border-indigo-100 rounded-xl p-4 flex gap-3 text-sm text-indigo-900 print:hidden">
+                {/* ユーザーガイド（PCのみ表示、モバイルでは非表示） */}
+                <div className="hidden md:flex bg-indigo-50/50 border border-indigo-100 rounded-xl p-4 gap-3 text-sm text-indigo-900 print:hidden">
                   <Info className="h-5 w-5 text-indigo-600 shrink-0 mt-0.5" />
                   <div className="space-y-1">
                     <h4 className="font-bold">💡 発注書作成ガイド</h4>

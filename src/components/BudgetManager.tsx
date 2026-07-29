@@ -42,7 +42,7 @@ export default function BudgetManager({
   shipNames = DEFAULT_SHIP_NAMES,
   onShipNamesChange
 }: BudgetManagerProps) {
-  const { isAdmin, isReadOnly } = useAuth();
+  const { isAdmin, isReadOnly, canPrint } = useAuth();
   const activeShipNames = shipNames && shipNames.length > 0 ? shipNames : DEFAULT_SHIP_NAMES;
 
   // 選択されている船（デフォルトは先頭の船）
@@ -547,12 +547,24 @@ export default function BudgetManager({
             )}
 
             <button
-              onClick={() => setShowPrintModal(true)}
+              onClick={() => {
+                if (!canPrint) {
+                  alert('ゲストアカウントは閲覧のみ可能で、印刷・PDF出力は制限されています。');
+                  return;
+                }
+                setShowPrintModal(true);
+              }}
               type="button"
-              className="inline-flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-3.5 py-2 rounded-lg transition-colors cursor-pointer shadow-sm"
+              className={`inline-flex items-center gap-1.5 text-xs font-bold px-3.5 py-2 rounded-lg transition-colors shadow-sm ${
+                canPrint
+                  ? 'bg-indigo-600 hover:bg-indigo-500 text-white cursor-pointer'
+                  : 'bg-slate-200 text-slate-500 cursor-not-allowed'
+              }`}
+              title={!canPrint ? 'ゲスト権限は印刷制限されています' : '予算集計表を印刷/PDF保存'}
             >
               <Printer className="h-3.5 w-3.5" />
-              予算集計表を印刷/PDF保存
+              <span>予算集計表を印刷/PDF保存</span>
+              {!canPrint && <Lock className="h-3 w-3 text-slate-400 ml-0.5" />}
             </button>
 
             {isAdmin && (

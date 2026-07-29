@@ -1,8 +1,9 @@
 import React, { useMemo, useRef } from 'react';
 import { OrderItem, OrderHeader, OrderCategory, PartHistory, ORDER_CATEGORY_TITLE_MAP } from '../types';
-import { Printer, ChevronLeft, Download, AlertCircle } from 'lucide-react';
+import { Printer, ChevronLeft, Download, AlertCircle, Lock } from 'lucide-react';
 import { generateOrderNo } from '../utils/orderNoHelper';
 import { registerNewItemsToHistories, getPartHistories } from '../utils/csvHelper';
+import { useAuth } from '../auth/AuthContext';
 
 interface OrderPreviewProps {
   header: OrderHeader;
@@ -22,6 +23,7 @@ interface OrderGroup {
 }
 
 export default function OrderPreview({ header, items, histories, onHistoriesChange, onBackClick }: OrderPreviewProps) {
+  const { canPrint } = useAuth();
   // 金額・単価を表示するかどうかの状態（デフォルトは true）
   const [showPrice, setShowPrice] = React.useState<boolean>(true);
 
@@ -112,6 +114,10 @@ export default function OrderPreview({ header, items, histories, onHistoriesChan
 
   // 金額ありで印刷・PDF出力
   const handlePrintWithPrice = () => {
+    if (!canPrint) {
+      alert('ゲストアカウントは閲覧専用のため、発注書の印刷・PDF保存はできません。');
+      return;
+    }
     saveToHistories();
     setShowPrice(true);
     setTimeout(() => {
@@ -121,6 +127,10 @@ export default function OrderPreview({ header, items, histories, onHistoriesChan
 
   // 金額なし（空欄）で印刷・PDF出力
   const handlePrintWithoutPrice = () => {
+    if (!canPrint) {
+      alert('ゲストアカウントは閲覧専用のため、発注書の印刷・PDF保存はできません。');
+      return;
+    }
     saveToHistories();
     setShowPrice(false);
     setTimeout(() => {
@@ -148,28 +158,32 @@ export default function OrderPreview({ header, items, histories, onHistoriesChan
             <button
               type="button"
               onClick={handlePrintWithPrice}
-              className={`inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-bold shadow-sm transition-all cursor-pointer ${
-                showPrice
-                  ? 'bg-indigo-600 text-white hover:bg-indigo-500 ring-2 ring-indigo-600 ring-offset-1'
-                  : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200'
+              className={`inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-bold shadow-sm transition-all ${
+                !canPrint
+                  ? 'bg-slate-200 text-slate-500 cursor-not-allowed border border-slate-300'
+                  : showPrice
+                  ? 'bg-indigo-600 text-white hover:bg-indigo-500 ring-2 ring-indigo-600 ring-offset-1 cursor-pointer'
+                  : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 cursor-pointer'
               }`}
             >
-              <Printer className="h-4 w-4" />
-              【金額を入れる】印刷 / PDF保存
+              {canPrint ? <Printer className="h-4 w-4" /> : <Lock className="h-4 w-4 text-amber-600" />}
+              <span>【金額を入れる】印刷 / PDF保存</span>
             </button>
 
             {/* 金額なし（空欄）ボタン */}
             <button
               type="button"
               onClick={handlePrintWithoutPrice}
-              className={`inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-bold shadow-sm transition-all cursor-pointer ${
-                !showPrice
-                  ? 'bg-slate-800 text-white hover:bg-slate-700 ring-2 ring-slate-800 ring-offset-1'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-300'
+              className={`inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-bold shadow-sm transition-all ${
+                !canPrint
+                  ? 'bg-slate-200 text-slate-500 cursor-not-allowed border border-slate-300'
+                  : !showPrice
+                  ? 'bg-slate-800 text-white hover:bg-slate-700 ring-2 ring-slate-800 ring-offset-1 cursor-pointer'
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-300 cursor-pointer'
               }`}
             >
-              <Printer className="h-4 w-4" />
-              【金額を入れない (空欄)】印刷 / PDF保存
+              {canPrint ? <Printer className="h-4 w-4" /> : <Lock className="h-4 w-4 text-amber-600" />}
+              <span>【金額を入れない (空欄)】印刷 / PDF保存</span>
             </button>
           </div>
         </div>

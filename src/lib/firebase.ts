@@ -8,7 +8,7 @@ import {
   sendPasswordResetEmail,
   User as FirebaseUser
 } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer, setDoc, getDoc } from 'firebase/firestore';
+import { getFirestore, doc, getDocFromServer, setDoc, getDoc, collection, addDoc, getDocs, query, orderBy } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
@@ -35,6 +35,11 @@ export {
   sendPasswordResetEmail,
   doc,
   setDoc,
-  getDoc
+  getDoc,
+  collection,
+  addDoc,
+  getDocs,
+  query,
+  orderBy
 };
 export type { FirebaseUser };

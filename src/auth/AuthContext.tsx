@@ -9,9 +9,11 @@ import {
   sendPasswordResetEmail,
   doc, 
   setDoc, 
-  getDoc 
+  getDoc,
+  collection,
+  addDoc
 } from '../lib/firebase';
-import { UserRole } from '../types';
+import { UserRole, GuestAccessLog } from '../types';
 
 export interface UserProfile {
   id: string;
@@ -67,21 +69,25 @@ interface AuthContextType {
   isAuthenticated: boolean;
   user: UserProfile | null;
   allUsers: UserProfile[];
+  guestAccessLogs: GuestAccessLog[];
   pendingVerification: PendingVerification | null;
   sendVerificationCode: (email: string, name?: string) => Promise<{ success: boolean; message: string; demoCode?: string }>;
   verifyCodeAndLogin: (code: string) => { success: boolean; message: string };
   signUpWithFirebase: (email: string, password: string, name: string, department?: string) => Promise<{ success: boolean; message: string }>;
   signInWithFirebase: (email: string, password: string) => Promise<{ success: boolean; message: string }>;
+  loginAsGuest: (guestName?: string) => Promise<{ success: boolean; message: string }>;
   sendPasswordReset: (email: string) => Promise<{ success: boolean; message: string }>;
   logout: () => void;
   renewAnnualAccount: () => void;
-  simulateExpireAccount: () => void;
   isAccountExpired: boolean;
   daysUntilExpiration: number | null;
   
   // 権限ヘルパー
   isAdmin: boolean;
   isReadOnly: boolean;
+  isGuest: boolean;
+  canPrint: boolean;
+  canEdit: boolean;
 
   // 管理者専用機能
   suspendUser: (email: string) => void;
@@ -89,11 +95,12 @@ interface AuthContextType {
   updateUserRole: (email: string, newRole: UserRole) => void;
   toggleAdminRole: (email: string) => void;
   deleteUser: (email: string) => void;
-  toggleMyRoleForDemo: () => void; // テスト用ロール切替
+  clearGuestLogs: () => void;
 }
 
 const STORAGE_KEY_USER = 'ikous_auth_user';
 const STORAGE_KEY_ALL_USERS = 'ikous_all_users_list';
+const STORAGE_KEY_GUEST_LOGS = 'ikous_guest_access_logs';
 
 // 初期デフォルトユーザーリスト
 const INITIAL_USERS: UserProfile[] = [
@@ -177,6 +184,25 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   });
 
+  // ゲストアクセスログの保持
+  const [guestAccessLogs, setGuestAccessLogs] = useState<GuestAccessLog[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_GUEST_LOGS);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  // ゲストアクセスログの localStorage 同期
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_GUEST_LOGS, JSON.stringify(guestAccessLogs));
+    } catch (e) {
+      console.warn('Guest access log save notice:', e);
+    }
+  }, [guestAccessLogs]);
+
   const [pendingVerification, setPendingVerification] = useState<PendingVerification | null>(null);
 
   const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000;
@@ -221,52 +247,89 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return () => unsubscribe();
   }, []);
 
-  // 全ユーザーリストの変更をストレージに同期 & r-oono@ikous.co.jp などの管理者権限自動補正
+  // 全ユーザーリストの変更をストレージに同期
   useEffect(() => {
-    // r-oono@ikous.co.jp または大野様のユーザー情報を無条件で『管理者』権限に自動補正・固定
-    let needsUpdate = false;
-    const sanitizedAllUsers = allUsers.map(u => {
-      const cleanEmail = u.email.toLowerCase().trim();
-      const cleanName = u.name.trim();
-      if (
-        cleanEmail === 'r-oono@ikous.co.jp' || 
-        cleanEmail.includes('oono') || 
-        cleanName.includes('大野') ||
-        cleanEmail.startsWith('imoto')
-      ) {
-        if (u.role !== '管理者') {
-          needsUpdate = true;
-          return { ...u, role: '管理者' as UserRole };
-        }
-      }
-      return u;
-    });
-
-    if (needsUpdate) {
-      setAllUsers(sanitizedAllUsers);
-      localStorage.setItem(STORAGE_KEY_ALL_USERS, JSON.stringify(sanitizedAllUsers));
-    } else {
+    try {
       localStorage.setItem(STORAGE_KEY_ALL_USERS, JSON.stringify(allUsers));
+    } catch (e) {
+      console.warn('Failed to sync allUsers to localStorage:', e);
     }
 
     if (user) {
-      const updatedSelf = sanitizedAllUsers.find(u => u.email.toLowerCase() === user.email.toLowerCase());
-      if (updatedSelf) {
-        if (user.role !== updatedSelf.role) {
-          setUser(updatedSelf);
+      const updatedSelf = allUsers.find(u => u.email.toLowerCase() === user.email.toLowerCase());
+      if (updatedSelf && user.role !== updatedSelf.role) {
+        setUser(updatedSelf);
+        try {
+          localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(updatedSelf));
+        } catch (e) {
+          console.warn('Failed to sync updated self user to localStorage:', e);
         }
-        localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(updatedSelf));
-      } else if (user.email.toLowerCase().includes('oono') || user.email.toLowerCase() === 'r-oono@ikous.co.jp') {
-        const fixedUser: UserProfile = { ...user, role: '管理者' };
-        setUser(fixedUser);
-        localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(fixedUser));
       }
     }
   }, [allUsers]);
 
   // 権限フラグ
   const isAdmin = user?.role === '管理者' || (user?.role as string) === 'システム管理者';
-  const isReadOnly = user?.role === '閲覧のみ';
+  const isGuest = user?.role === 'ゲスト';
+  const isReadOnly = user?.role === '閲覧のみ' || user?.role === 'ゲスト';
+  const canPrint = user?.role !== 'ゲスト'; // ゲストは印刷・PDF出力不可（閲覧のみは可）
+  const canEdit = user?.role === '管理者' || user?.role === '一般ユーザー';
+
+  // 簡易ゲストログイン（誰でも1クリックでアクセス可能。ログイン日時・識別ID等のアクセスログを記録）
+  const loginAsGuest = async (customGuestName?: string) => {
+    const now = new Date();
+    const formattedDate = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+    
+    const timeHash = String(now.getTime()).slice(-4);
+    const guestEmail = `guest-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${timeHash}@guest.ikous.co.jp`;
+    const displayName = customGuestName?.trim() ? `ゲスト (${customGuestName.trim()})` : `ゲストユーザー (${timeHash})`;
+    const guestId = `guest_${now.getTime()}`;
+
+    const newLog: GuestAccessLog = {
+      id: `log_${now.getTime()}`,
+      guestId,
+      guestName: displayName,
+      email: guestEmail,
+      loginAt: now.toISOString(),
+      formattedLoginAt: formattedDate,
+      userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'Unknown',
+    };
+
+    // アクセスログ記録
+    setGuestAccessLogs(prev => [newLog, ...prev]);
+
+    try {
+      await addDoc(collection(db, 'guest_access_logs'), newLog);
+    } catch (e) {
+      console.warn('Firestore guest log notice (saving in localStorage):', e);
+    }
+
+    // ゲストユーザー情報生成
+    const guestProfile: UserProfile = {
+      id: guestId,
+      name: displayName,
+      email: guestEmail,
+      department: '外部・臨時閲覧ゲスト',
+      role: 'ゲスト',
+      status: 'active',
+      createdAt: now.toISOString(),
+      lastVerifiedAt: now.toISOString(),
+      expiresAt: new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString(),
+    };
+
+    setUser(guestProfile);
+    localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(guestProfile));
+
+    return {
+      success: true,
+      message: `ゲストとしてログインしました。（日時: ${formattedDate}）`
+    };
+  };
+
+  const clearGuestLogs = () => {
+    setGuestAccessLogs([]);
+    localStorage.removeItem(STORAGE_KEY_GUEST_LOGS);
+  };
 
   // アカウントが1年経過して期限切れかどうかチェック
   const isAccountExpired = React.useMemo(() => {
@@ -647,6 +710,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
       return u;
     }));
+
+    if (user && user.email.toLowerCase() === targetEmail.toLowerCase()) {
+      const updatedUser = { ...user, role: newRole };
+      setUser(updatedUser);
+      try {
+        localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(updatedUser));
+      } catch (e) {
+        console.warn('Failed to save user role:', e);
+      }
+    }
   };
 
   const toggleAdminRole = (targetEmail: string) => {
@@ -694,25 +767,29 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         isAuthenticated: !!user && user.status === 'active' && !isAccountExpired,
         user,
         allUsers,
+        guestAccessLogs,
         pendingVerification,
         sendVerificationCode,
         verifyCodeAndLogin,
         signUpWithFirebase,
         signInWithFirebase,
+        loginAsGuest,
         sendPasswordReset,
         logout,
         renewAnnualAccount,
-        simulateExpireAccount,
         isAccountExpired,
         daysUntilExpiration,
         isAdmin,
         isReadOnly,
+        isGuest,
+        canPrint,
+        canEdit,
         suspendUser,
         activateUser,
         updateUserRole,
         toggleAdminRole,
         deleteUser,
-        toggleMyRoleForDemo,
+        clearGuestLogs,
       }}
     >
       {children}
