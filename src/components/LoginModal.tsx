@@ -170,12 +170,12 @@ export default function LoginModal() {
           <div className="mb-3 flex justify-center">
             <Logo variant="white-card" className="h-10" />
           </div>
-          <h2 className="text-xl font-extrabold tracking-tight">
-            株式会社イコーズ 船体部品・予算発注管理
+          <h2 className="text-xl font-black tracking-tight font-mono text-transparent bg-clip-text bg-gradient-to-r from-sky-300 via-indigo-200 to-white">
+            IKOUS Parts Order
           </h2>
-          <p className="text-xs text-indigo-200 mt-1 flex items-center justify-center gap-1.5">
+          <p className="text-xs text-indigo-200 mt-1 flex items-center justify-center gap-1.5 font-sans">
             <Lock className="h-3.5 w-3.5 text-emerald-400" />
-            <span>リアルメールアドレス認証 / アカウント管理</span>
+            <span>株式会社イコーズ 社内専用 船舶部品・資材・予算発注システム</span>
           </p>
         </div>
 
@@ -316,21 +316,26 @@ export default function LoginModal() {
           {/* 2. 新規アカウント作成モード */}
           {authMode === 'signup' && (
             <form onSubmit={handleFirebaseSignUp} className="space-y-4">
-              <div className="bg-emerald-50 border border-emerald-200 p-3.5 rounded-xl text-xs text-emerald-950 leading-relaxed shadow-xs">
-                <div className="font-bold text-emerald-900 flex items-center gap-1.5 mb-1">
+              <div className="bg-emerald-50 border border-emerald-200 p-3.5 rounded-xl text-xs text-emerald-950 leading-relaxed shadow-xs space-y-1">
+                <div className="font-bold text-emerald-900 flex items-center gap-1.5">
                   <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
-                  <span>メール受信待ちは不要です（その場で登録完了）</span>
+                  <span>【社内専用】@ikous.co.jp アカウント専用</span>
                 </div>
-                <span>
-                  お使いのメールアドレス・パスワード（6文字以上）・お名前を入力して「新規アカウントを作成」を押すと、メールの到着を待たずにその場でアカウント開通＆ログインが完了します。
-                </span>
+                <p className="text-slate-600 text-[11px] leading-normal">
+                  セキュリティ保護のため、アカウント登録は社内ドメイン（<strong className="text-indigo-700">@ikous.co.jp</strong>）のメールアドレスのみ可能です。登録後、その場で即時開通・ログイン完了します。
+                </p>
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
-                  <Mail className="h-4 w-4 text-indigo-600" />
-                  <span>メールアドレス</span>
-                  <span className="text-rose-500">*</span>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <Mail className="h-4 w-4 text-indigo-600" />
+                    <span>メールアドレス</span>
+                    <span className="text-rose-500">*</span>
+                  </span>
+                  <span className="text-[10px] font-mono text-indigo-600 font-bold bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+                    @ikous.co.jp 限定
+                  </span>
                 </label>
                 <input
                   type="email"

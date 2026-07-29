@@ -80,13 +80,17 @@ function AppContent() {
           <div className="flex items-center gap-3">
             <Logo variant="white-card" className="h-9" />
             <div>
-              <h1 className="text-lg sm:text-xl font-extrabold tracking-tight flex items-center gap-2">
-                船用部品・資材 発注＆予算管理システム
-                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-800 text-indigo-300 border border-slate-700">
-                  株式会社イコーズ 船体管理対応
+              <h1 className="text-lg sm:text-xl font-black tracking-tight flex items-center gap-2">
+                <span className="font-mono text-transparent bg-clip-text bg-gradient-to-r from-sky-300 via-indigo-200 to-white text-xl sm:text-2xl">
+                  IKOUS Parts Order
+                </span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-900/90 text-indigo-200 border border-indigo-700/60 hidden md:inline-block">
+                  船舶部品・資材・予算発注管理
                 </span>
               </h1>
-              <p className="text-xs text-indigo-200 hidden sm:block">全16隻の船舶別・4分類（部品/船用品/潤滑油/廃油処理）発注書自動作成＆予算集計</p>
+              <p className="text-xs text-indigo-200/90 hidden sm:block">
+                株式会社イコーズ 全16隻対応 | 部品・船用品・潤滑油・廃油処理 発注書作成 ＆ 予算自動集計
+              </p>
             </div>
           </div>
 

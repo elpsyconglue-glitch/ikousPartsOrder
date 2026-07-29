@@ -201,7 +201,10 @@ export default function UserManagementModal({ onClose }: Props) {
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-semibold text-slate-600 mb-1">社内メールアドレス</label>
+                  <label className="block text-[11px] font-semibold text-slate-600 mb-1 flex items-center justify-between">
+                    <span>社内メールアドレス</span>
+                    <span className="text-[10px] text-indigo-600 font-bold bg-indigo-50 px-1.5 py-0.2 rounded border border-indigo-200">@ikous.co.jp 限定</span>
+                  </label>
                   <input
                     type="email"
                     required

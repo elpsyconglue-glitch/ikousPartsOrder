@@ -260,6 +260,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (!cleanEmail.includes('@')) {
       return { success: false, message: '有効なメールアドレスを入力してください。' };
     }
+    if (!cleanEmail.endsWith('@ikous.co.jp')) {
+      return { 
+        success: false, 
+        message: '【社内専用制限】アカウント登録は「@ikous.co.jp」ドメインの社内メールアドレスのみ許可されています。' 
+      };
+    }
     if (password.length < 6) {
       return { success: false, message: 'パスワードは6文字以上で入力してください。' };
     }
@@ -467,6 +473,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     
     if (!cleanEmail.includes('@')) {
       return { success: false, message: '有効なメールアドレスを入力してください。' };
+    }
+
+    if (!cleanEmail.endsWith('@ikous.co.jp')) {
+      return {
+        success: false,
+        message: '【社内専用制限】コード送信・開通手続きは「@ikous.co.jp」ドメインの社員メールアドレスのみ許可されています。'
+      };
     }
 
     const existing = allUsers.find(u => u.email.toLowerCase() === cleanEmail);
