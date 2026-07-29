@@ -418,6 +418,137 @@ export default function UserManagementModal({ onClose }: Props) {
                   </div>
                 </div>
               </div>
+
+              {/* 社員・アカウント一覧テーブル */}
+              <div className="border border-slate-200 rounded-xl overflow-hidden shadow-xs">
+                <div className="overflow-x-auto max-h-[400px]">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 sticky top-0 z-10">
+                      <tr>
+                        <th className="py-3 px-4">社員氏名 / ログイン名</th>
+                        <th className="py-3 px-4">メールアドレス（ログインID）</th>
+                        <th className="py-3 px-4">所属部署</th>
+                        <th className="py-3 px-4">システム権限（ロール）</th>
+                        <th className="py-3 px-4">アクセス状況</th>
+                        <th className="py-3 px-4 text-center">退職・権限操作</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 bg-white">
+                      {filteredUsers.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="py-8 text-center text-slate-400">
+                            該当する社員アカウントが見つかりません。
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredUsers.map(u => {
+                          const isSelf = currentUser?.email.toLowerCase() === u.email.toLowerCase();
+                          const isSuspended = u.status === 'suspended';
+                          const currentRoleDisplay = u.role === ('システム管理者' as any) ? '管理者' : u.role;
+
+                          return (
+                            <tr key={u.email} className={`hover:bg-slate-50 transition-colors ${isSuspended ? 'bg-rose-50/40' : ''}`}>
+                              <td className="py-3 px-4">
+                                <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                                  <span>{u.name}</span>
+                                  {isSelf && (
+                                    <span className="text-[10px] bg-indigo-100 text-indigo-800 border border-indigo-200 px-1.5 py-0.2 rounded font-bold">
+                                      あなた (自端末)
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+
+                              <td className="py-3 px-4 font-mono font-medium text-slate-700">
+                                {u.email}
+                              </td>
+
+                              <td className="py-3 px-4 text-slate-600 font-medium">
+                                {u.department || '未設定'}
+                              </td>
+
+                              <td className="py-3 px-4">
+                                <div className="relative inline-block">
+                                  <select
+                                    value={currentRoleDisplay}
+                                    onChange={e => updateUserRole(u.email, e.target.value as UserRole)}
+                                    className={`text-xs px-2.5 py-1 rounded-lg font-bold border transition-all cursor-pointer ${
+                                      currentRoleDisplay === '管理者'
+                                        ? 'bg-indigo-50 text-indigo-900 border-indigo-300 focus:ring-2 focus:ring-indigo-500'
+                                        : currentRoleDisplay === '一般ユーザー'
+                                        ? 'bg-blue-50 text-blue-900 border-blue-300 focus:ring-2 focus:ring-blue-500'
+                                        : 'bg-slate-100 text-slate-700 border-slate-300 focus:ring-2 focus:ring-slate-400'
+                                    }`}
+                                  >
+                                    <option value="閲覧のみ">👁 閲覧のみ (発注不可・印刷可)</option>
+                                    <option value="一般ユーザー">✍️ 一般ユーザー (発注・編集可)</option>
+                                    <option value="管理者">👑 管理者 (全権限管理)</option>
+                                  </select>
+                                </div>
+                              </td>
+
+                              <td className="py-3 px-4">
+                                {isSuspended ? (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
+                                    <UserX className="h-3.5 w-3.5 text-rose-600" />
+                                    停止（退職・離職）
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                                    通常利用可能
+                                  </span>
+                                )}
+                              </td>
+
+                              <td className="py-3 px-4 text-center">
+                                <div className="flex items-center justify-center gap-2">
+                                  {isSuspended ? (
+                                    <button
+                                      onClick={() => activateUser(u.email)}
+                                      className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold transition-colors cursor-pointer flex items-center gap-1"
+                                      title="アカウントの停止を解除してアクセス再開"
+                                    >
+                                      <UserCheck className="h-3.5 w-3.5" />
+                                      <span>利用再開</span>
+                                    </button>
+                                  ) : (
+                                    <button
+                                      onClick={() => setTargetUserToSuspend(u)}
+                                      disabled={isSelf}
+                                      className={`px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[11px] font-bold transition-colors cursor-pointer flex items-center gap-1 ${
+                                        isSelf ? 'opacity-40 cursor-not-allowed' : ''
+                                      }`}
+                                      title="社員退職時などにアカウントを無効化してアクセス権限を完全剥奪"
+                                    >
+                                      <UserX className="h-3.5 w-3.5" />
+                                      <span>権限剥奪（退職）</span>
+                                    </button>
+                                  )}
+
+                                  {!isSelf && (
+                                    <button
+                                      onClick={() => {
+                                        if (confirm(`${u.name} 様のアカウント情報を完全に削除しますか？`)) {
+                                          deleteUser(u.email);
+                                        }
+                                      }}
+                                      className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                      title="アカウント削除"
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
           )}
 

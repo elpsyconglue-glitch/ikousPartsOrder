@@ -2,8 +2,36 @@ import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import { PartHistory, OrderItem } from '../types';
 import { DEFAULT_PART_HISTORIES } from '../defaultData';
+import { db, collection, doc, setDoc, onSnapshot, handleFirestoreError, OperationType } from '../lib/firebase';
 
 const LOCAL_STORAGE_KEY = 'ship_part_histories';
+
+// Firestore からのリアルタイム同期用関数
+export function subscribePartHistories(onUpdate: (histories: PartHistory[]) => void) {
+  return onSnapshot(collection(db, 'part_histories'), (snapshot) => {
+    if (!snapshot.empty) {
+      const items: PartHistory[] = [];
+      snapshot.forEach(d => {
+        items.push(d.data() as PartHistory);
+      });
+      // 保持
+      savePartHistories(items);
+      onUpdate(items);
+    }
+  }, (err) => {
+    handleFirestoreError(err, OperationType.LIST, 'part_histories');
+  });
+}
+
+// 単一または複数の PartHistory を Firestore と localStorage の両方に保存
+export async function savePartHistoryToFirestore(item: PartHistory) {
+  try {
+    const docRef = doc(db, 'part_histories', item.id);
+    await setDoc(docRef, item, { merge: true });
+  } catch (e) {
+    handleFirestoreError(e, OperationType.WRITE, `part_histories/${item.id}`);
+  }
+}
 
 // 日本の年度（4月〜翌3月）を算出するヘルパー
 export function getFiscalYear(dateString?: string): number {
@@ -225,7 +253,7 @@ export function registerNewItemsToHistories(
     if (existingSameOrderIndex >= 0) {
       // 既に同じ発注書No・品名で登録済みの場合はその情報を更新（重複追加防止）
       const existing = updatedHistories[existingSameOrderIndex];
-      updatedHistories[existingSameOrderIndex] = {
+      const updatedItem = {
         ...existing,
         unitPrice: unitPriceNum > 0 ? unitPriceNum : existing.unitPrice,
         quantity: quantityNum,
@@ -234,6 +262,8 @@ export function registerNewItemsToHistories(
         orderNo: targetOrderNo,
         remark: item.remark || existing.remark
       };
+      updatedHistories[existingSameOrderIndex] = updatedItem;
+      savePartHistoryToFirestore(updatedItem);
     } else {
       // 2. 新規レコードとして追加
       const newHistory: PartHistory = {
@@ -253,6 +283,7 @@ export function registerNewItemsToHistories(
         remark: item.remark || ''
       };
       updatedHistories = [newHistory, ...updatedHistories];
+      savePartHistoryToFirestore(newHistory);
     }
   });
 

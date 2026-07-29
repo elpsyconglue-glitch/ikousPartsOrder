@@ -5,7 +5,7 @@
 
 import { useState, useEffect } from 'react';
 import { PartHistory, OrderItem, OrderHeader } from './types';
-import { getPartHistories } from './utils/csvHelper';
+import { getPartHistories, subscribePartHistories } from './utils/csvHelper';
 import { getShipNames } from './utils/shipHelper';
 import CsvManager from './components/CsvManager';
 import OrderForm from './components/OrderForm';
@@ -56,10 +56,17 @@ function AppContent() {
     }
   ]);
 
-  // 初期読み込み
+  // 初期読み込み & Firestore からのリアルタイム同期バインド
   useEffect(() => {
     const loadedHistories = getPartHistories();
     setHistories(loadedHistories);
+
+    // Firestore リアルタイム同期
+    const unsub = subscribePartHistories((updated) => {
+      setHistories(updated);
+    });
+
+    return () => unsub();
   }, []);
 
   // プレビュー画面への遷移

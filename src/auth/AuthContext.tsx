@@ -11,7 +11,11 @@ import {
   setDoc, 
   getDoc,
   collection,
-  addDoc
+  addDoc,
+  onSnapshot,
+  deleteDoc,
+  handleFirestoreError,
+  OperationType
 } from '../lib/firebase';
 import { UserRole, GuestAccessLog } from '../types';
 
@@ -102,7 +106,7 @@ const STORAGE_KEY_USER = 'ikous_auth_user';
 const STORAGE_KEY_ALL_USERS = 'ikous_all_users_list';
 const STORAGE_KEY_GUEST_LOGS = 'ikous_guest_access_logs';
 
-// 初期デフォルトユーザーリスト
+// 初期デフォルトユーザーリスト（サンプルから井本等を削除）
 const INITIAL_USERS: UserProfile[] = [
   {
     id: 'usr_oono',
@@ -143,17 +147,6 @@ const INITIAL_USERS: UserProfile[] = [
     email: 'miwa@ikous.co.jp',
     department: '株式会社イコーズ 工務部',
     role: '一般ユーザー',
-    status: 'active',
-    createdAt: new Date('2026-01-01').toISOString(),
-    lastVerifiedAt: new Date().toISOString(),
-    expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
-  },
-  {
-    id: 'usr_admin',
-    name: '井本 尚',
-    email: 'imoto@ikous.co.jp',
-    department: '株式会社イコーズ 役員・管理部',
-    role: '管理者',
     status: 'active',
     createdAt: new Date('2026-01-01').toISOString(),
     lastVerifiedAt: new Date().toISOString(),
@@ -247,6 +240,38 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return () => unsubscribe();
   }, []);
 
+  // Firestore の users コレクションをリアルタイム同期（他アカウント・全端末で共有）
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'users'), (snapshot) => {
+      if (!snapshot.empty) {
+        const firestoreUsers: UserProfile[] = [];
+        snapshot.forEach(docSnap => {
+          const data = docSnap.data() as UserProfile;
+          if (data && data.email) {
+            firestoreUsers.push(data);
+          }
+        });
+
+        // デフォルト初期ユーザーと統合（重複排除）
+        setAllUsers(prev => {
+          const map = new Map<string, UserProfile>();
+          // 初期値
+          INITIAL_USERS.forEach(u => map.set(u.email.toLowerCase(), u));
+          // ローカルの既存データ
+          prev.forEach(u => map.set(u.email.toLowerCase(), u));
+          // Firestore の最新データで上書き
+          firestoreUsers.forEach(u => map.set(u.email.toLowerCase(), u));
+
+          return Array.from(map.values());
+        });
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'users');
+    });
+
+    return () => unsub();
+  }, []);
+
   // 全ユーザーリストの変更をストレージに同期
   useEffect(() => {
     try {
@@ -257,7 +282,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     if (user) {
       const updatedSelf = allUsers.find(u => u.email.toLowerCase() === user.email.toLowerCase());
-      if (updatedSelf && user.role !== updatedSelf.role) {
+      if (updatedSelf && (user.role !== updatedSelf.role || user.status !== updatedSelf.status)) {
         setUser(updatedSelf);
         try {
           localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(updatedSelf));
@@ -683,33 +708,63 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(updated));
   };
 
-  // 管理者専用機能
-  const suspendUser = (targetEmail: string) => {
+  // 管理者専用機能（Firestore に即時書き込み同期）
+  const suspendUser = async (targetEmail: string) => {
+    const targetUser = allUsers.find(u => u.email.toLowerCase() === targetEmail.toLowerCase());
     setAllUsers(prev => prev.map(u => {
       if (u.email.toLowerCase() === targetEmail.toLowerCase()) {
         return { ...u, status: 'suspended' };
       }
       return u;
     }));
+
+    if (targetUser) {
+      try {
+        const userDocRef = doc(db, 'users', targetUser.id || targetUser.email);
+        await setDoc(userDocRef, { ...targetUser, status: 'suspended' }, { merge: true });
+      } catch (e) {
+        handleFirestoreError(e, OperationType.UPDATE, `users/${targetEmail}`);
+      }
+    }
   };
 
-  const activateUser = (targetEmail: string) => {
+  const activateUser = async (targetEmail: string) => {
+    const targetUser = allUsers.find(u => u.email.toLowerCase() === targetEmail.toLowerCase());
     setAllUsers(prev => prev.map(u => {
       if (u.email.toLowerCase() === targetEmail.toLowerCase()) {
         return { ...u, status: 'active' };
       }
       return u;
     }));
+
+    if (targetUser) {
+      try {
+        const userDocRef = doc(db, 'users', targetUser.id || targetUser.email);
+        await setDoc(userDocRef, { ...targetUser, status: 'active' }, { merge: true });
+      } catch (e) {
+        handleFirestoreError(e, OperationType.UPDATE, `users/${targetEmail}`);
+      }
+    }
   };
 
   // ユーザーロール指定変更
-  const updateUserRole = (targetEmail: string, newRole: UserRole) => {
+  const updateUserRole = async (targetEmail: string, newRole: UserRole) => {
+    const targetUser = allUsers.find(u => u.email.toLowerCase() === targetEmail.toLowerCase());
     setAllUsers(prev => prev.map(u => {
       if (u.email.toLowerCase() === targetEmail.toLowerCase()) {
         return { ...u, role: newRole };
       }
       return u;
     }));
+
+    if (targetUser) {
+      try {
+        const userDocRef = doc(db, 'users', targetUser.id || targetUser.email);
+        await setDoc(userDocRef, { ...targetUser, role: newRole }, { merge: true });
+      } catch (e) {
+        handleFirestoreError(e, OperationType.UPDATE, `users/${targetEmail}`);
+      }
+    }
 
     if (user && user.email.toLowerCase() === targetEmail.toLowerCase()) {
       const updatedUser = { ...user, role: newRole };
@@ -723,18 +778,26 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const toggleAdminRole = (targetEmail: string) => {
-    setAllUsers(prev => prev.map(u => {
-      if (u.email.toLowerCase() === targetEmail.toLowerCase()) {
-        const currentIsAdmin = u.role === '管理者' || (u.role as string) === 'システム管理者';
-        const newRole: UserRole = currentIsAdmin ? '一般ユーザー' : '管理者';
-        return { ...u, role: newRole };
-      }
-      return u;
-    }));
+    const target = allUsers.find(u => u.email.toLowerCase() === targetEmail.toLowerCase());
+    if (target) {
+      const currentIsAdmin = target.role === '管理者' || (target.role as string) === 'システム管理者';
+      const newRole: UserRole = currentIsAdmin ? '一般ユーザー' : '管理者';
+      updateUserRole(targetEmail, newRole);
+    }
   };
 
-  const deleteUser = (targetEmail: string) => {
+  const deleteUser = async (targetEmail: string) => {
+    const targetUser = allUsers.find(u => u.email.toLowerCase() === targetEmail.toLowerCase());
     setAllUsers(prev => prev.filter(u => u.email.toLowerCase() !== targetEmail.toLowerCase()));
+
+    if (targetUser) {
+      try {
+        const userDocRef = doc(db, 'users', targetUser.id || targetUser.email);
+        await deleteDoc(userDocRef);
+      } catch (e) {
+        handleFirestoreError(e, OperationType.DELETE, `users/${targetEmail}`);
+      }
+    }
   };
 
   // デモ用ロール循環切り替え (管理者 ➔ 一般ユーザー ➔ 閲覧のみ ➔ 管理者)
