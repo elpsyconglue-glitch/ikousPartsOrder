@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { PriceRevisionDoc } from '../types';
 import { 
-  getPriceRevisionDocs, 
-  savePriceRevisionDocs, 
+  subscribePriceRevisionDocs, 
+  savePriceRevisionDocToFirestore, 
+  deletePriceRevisionDocFromFirestore, 
   fileToDataUrl 
 } from '../utils/priceRevisionHelper';
 import { 
@@ -17,7 +18,8 @@ import {
   Building2, 
   Calendar, 
   Eye,
-  FileCheck
+  FileCheck,
+  CloudCheck
 } from 'lucide-react';
 
 interface PriceRevisionModalProps {
@@ -39,12 +41,17 @@ export default function PriceRevisionModal({ isOpen, onClose }: PriceRevisionMod
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState<boolean>(false);
 
-  // 初回マウント＆開いた時にデータ読み込み
+  // リアルタイムリスナー設定
   useEffect(() => {
+    let unsubscribe: () => void = () => {};
     if (isOpen) {
-      const loaded = getPriceRevisionDocs();
-      setDocs(loaded);
+      unsubscribe = subscribePriceRevisionDocs((updatedDocs) => {
+        setDocs(updatedDocs);
+      });
     }
+    return () => {
+      unsubscribe();
+    };
   }, [isOpen]);
 
   if (!isOpen) return null;
@@ -111,9 +118,7 @@ export default function PriceRevisionModal({ isOpen, onClose }: PriceRevisionMod
         remark: remark.trim()
       };
 
-      const updated = [newDoc, ...docs];
-      setDocs(updated);
-      savePriceRevisionDocs(updated);
+      await savePriceRevisionDocToFirestore(newDoc);
 
       // リセット
       setTitle('');
@@ -124,20 +129,23 @@ export default function PriceRevisionModal({ isOpen, onClose }: PriceRevisionMod
       setShowAddForm(false);
     } catch (err) {
       console.error(err);
-      alert('ファイルの読み込みに失敗しました。');
+      alert('クラウドへの保存に失敗しました。ファイルサイズ（推奨1MB未満）やネットワーク接続をご確認ください。');
     } finally {
       setIsUploading(false);
     }
   };
 
   // 削除処理
-  const handleDelete = (id: string, docTitle: string) => {
-    if (window.confirm(`「${docTitle}」を削除してもよろしいですか？`)) {
-      const updated = docs.filter(d => d.id !== id);
-      setDocs(updated);
-      savePriceRevisionDocs(updated);
-      if (viewingDoc?.id === id) {
-        setViewingDoc(null);
+  const handleDelete = async (id: string, docTitle: string) => {
+    if (window.confirm(`「${docTitle}」を全ユーザー共有DBから削除してもよろしいですか？`)) {
+      try {
+        await deletePriceRevisionDocFromFirestore(id);
+        if (viewingDoc?.id === id) {
+          setViewingDoc(null);
+        }
+      } catch (err) {
+        console.error(err);
+        alert('削除処理に失敗しました。');
       }
     }
   };
@@ -435,8 +443,11 @@ export default function PriceRevisionModal({ isOpen, onClose }: PriceRevisionMod
         </div>
 
         {/* フッター */}
-        <div className="bg-slate-100 px-6 py-3 border-t border-slate-200 flex justify-between items-center text-xs text-slate-500">
-          <span>💡 登録した資料はブラウザ内に自動保管され、いつでも参照可能です。</span>
+        <div className="bg-slate-100 px-6 py-3 border-t border-slate-200 flex justify-between items-center text-xs text-slate-600">
+          <span className="flex items-center gap-1.5 font-medium text-indigo-700">
+            <CloudCheck className="h-4 w-4 text-indigo-600 shrink-0" />
+            登録された価格改定PDFはクラウドDBに保存され、全ユーザー・全端末でリアルタイム共有されます。
+          </span>
           <button
             onClick={onClose}
             className="px-4 py-1.5 font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg cursor-pointer"
