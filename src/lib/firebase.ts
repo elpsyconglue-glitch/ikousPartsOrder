@@ -21,7 +21,8 @@ import {
   orderBy,
   onSnapshot,
   deleteDoc,
-  updateDoc
+  updateDoc,
+  writeBatch
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
@@ -81,7 +82,8 @@ export {
   orderBy,
   onSnapshot,
   deleteDoc,
-  updateDoc
+  updateDoc,
+  writeBatch
 };
 export type { FirebaseUser };
 

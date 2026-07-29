@@ -2,7 +2,7 @@ import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import { PartHistory, OrderItem } from '../types';
 import { DEFAULT_PART_HISTORIES } from '../defaultData';
-import { db, collection, doc, setDoc, onSnapshot, handleFirestoreError, OperationType } from '../lib/firebase';
+import { db, collection, doc, setDoc, onSnapshot, writeBatch, handleFirestoreError, OperationType } from '../lib/firebase';
 
 const LOCAL_STORAGE_KEY = 'ship_part_histories';
 
@@ -23,7 +23,7 @@ export function subscribePartHistories(onUpdate: (histories: PartHistory[]) => v
   });
 }
 
-// 単一または複数の PartHistory を Firestore と localStorage の両方に保存
+// 単一の PartHistory を Firestore と localStorage の両方に保存
 export async function savePartHistoryToFirestore(item: PartHistory) {
   try {
     const docRef = doc(db, 'part_histories', item.id);
@@ -31,6 +31,38 @@ export async function savePartHistoryToFirestore(item: PartHistory) {
   } catch (e) {
     handleFirestoreError(e, OperationType.WRITE, `part_histories/${item.id}`);
   }
+}
+
+// 大量データ（6,657件等）を Firestore に一括同期（500件単位バッチ）
+export async function syncAllHistoriesToFirestore(
+  histories: PartHistory[], 
+  onProgress?: (current: number, total: number) => void
+): Promise<number> {
+  const chunkSize = 400; // 安全のため400件ずつ
+  const total = histories.length;
+  let count = 0;
+
+  for (let i = 0; i < total; i += chunkSize) {
+    const chunk = histories.slice(i, i + chunkSize);
+    const batch = writeBatch(db);
+
+    for (const item of chunk) {
+      const docRef = doc(db, 'part_histories', item.id);
+      batch.set(docRef, item, { merge: true });
+    }
+
+    try {
+      await batch.commit();
+      count += chunk.length;
+      if (onProgress) {
+        onProgress(count, total);
+      }
+    } catch (e) {
+      handleFirestoreError(e, OperationType.WRITE, 'part_histories (batch)');
+    }
+  }
+
+  return count;
 }
 
 // 日本の年度（4月〜翌3月）を算出するヘルパー

@@ -5,9 +5,10 @@ import {
   parsePartHistoriesFromFile, 
   savePartHistories, 
   exportPartHistoriesToExcel, 
-  exportPartHistoriesToCsv 
+  exportPartHistoriesToCsv,
+  syncAllHistoriesToFirestore
 } from '../utils/csvHelper';
-import { Upload, Download, RotateCcw, Database, AlertCircle, CheckCircle, FileSpreadsheet, FileText } from 'lucide-react';
+import { Upload, Download, RotateCcw, Database, AlertCircle, CheckCircle, FileSpreadsheet, FileText, CloudUpload, Loader2 } from 'lucide-react';
 
 interface CsvManagerProps {
   histories: PartHistory[];
@@ -19,7 +20,33 @@ export default function CsvManager({ histories, onHistoriesChange }: CsvManagerP
   const [status, setStatus] = useState<{ type: 'success' | 'error' | 'info' | null; message: string }>({ type: null, message: '' });
   const [importMode, setImportMode] = useState<'append' | 'replace'>('append');
   const [showClearModal, setShowClearModal] = useState(false);
+  const [isSyncingCloud, setIsSyncingCloud] = useState(false);
+  const [syncProgress, setSyncProgress] = useState<{ current: number; total: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleSyncCloud = async () => {
+    if (histories.length === 0) {
+      setStatus({ type: 'error', message: '同期する履歴データが存在しません。' });
+      return;
+    }
+    setIsSyncingCloud(true);
+    setStatus({ type: 'info', message: `クラウドデータベースに全 ${histories.length} 件を同期アップロード中...` });
+    try {
+      const syncedCount = await syncAllHistoriesToFirestore(histories, (current, total) => {
+        setSyncProgress({ current, total });
+      });
+      setStatus({ 
+        type: 'success', 
+        message: `全 ${syncedCount} 件の履歴データをクラウドに同期送信しました！他ユーザー・全端末でリアルタイム共有されます。` 
+      });
+    } catch (err: any) {
+      console.error(err);
+      setStatus({ type: 'error', message: 'クラウド同期中にエラーが発生しました。' });
+    } finally {
+      setIsSyncingCloud(false);
+      setSyncProgress(null);
+    }
+  };
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -68,6 +95,11 @@ export default function CsvManager({ histories, onHistoriesChange }: CsvManagerP
 
       savePartHistories(updatedHistories);
       onHistoriesChange(updatedHistories);
+
+      // クラウド DB にもバックグラウンドで同期送信
+      syncAllHistoriesToFirestore(updatedHistories).catch(err => {
+        console.warn('Background sync on import failed:', err);
+      });
     } catch (err: any) {
       console.error(err);
       setStatus({ type: 'error', message: `解析エラー: ${err.message || 'ファイルが壊れているか、フォーマットが不完全です。'}` });
@@ -214,10 +246,30 @@ export default function CsvManager({ histories, onHistoriesChange }: CsvManagerP
           <div className="flex flex-col justify-between border border-slate-100 rounded-lg p-4 bg-slate-50/50">
             <h3 className="text-xs font-semibold text-slate-700 mb-3 flex items-center gap-1.5">
               <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600" />
-              データの書き出し・管理
+              データのクラウド共有・管理
             </h3>
             
             <div className="space-y-2 flex-1">
+              <button
+                type="button"
+                onClick={handleSyncCloud}
+                disabled={isSyncingCloud}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-bold text-white bg-indigo-600 border border-indigo-700 rounded-md hover:bg-indigo-700 disabled:opacity-50 transition-colors shadow-sm cursor-pointer"
+                title="ローカルにある6,657件等の全データを全端末・全アカウント共有クラウドDBにアップロード送信します"
+              >
+                {isSyncingCloud ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-white" />
+                    <span>クラウド同期中 ({syncProgress ? `${syncProgress.current}/${syncProgress.total}` : ''})...</span>
+                  </>
+                ) : (
+                  <>
+                    <CloudUpload className="h-4 w-4 text-white" />
+                    <span>クラウド共有DBへ一括送信</span>
+                  </>
+                )}
+              </button>
+
               <button
                 type="button"
                 onClick={handleExportExcel}
