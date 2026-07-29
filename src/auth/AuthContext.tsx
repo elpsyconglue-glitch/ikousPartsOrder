@@ -221,14 +221,45 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return () => unsubscribe();
   }, []);
 
-  // 全ユーザーリストの変更をストレージに同期
+  // 全ユーザーリストの変更をストレージに同期 & r-oono@ikous.co.jp などの管理者権限自動補正
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY_ALL_USERS, JSON.stringify(allUsers));
+    // r-oono@ikous.co.jp または大野様のユーザー情報を無条件で『管理者』権限に自動補正・固定
+    let needsUpdate = false;
+    const sanitizedAllUsers = allUsers.map(u => {
+      const cleanEmail = u.email.toLowerCase().trim();
+      const cleanName = u.name.trim();
+      if (
+        cleanEmail === 'r-oono@ikous.co.jp' || 
+        cleanEmail.includes('oono') || 
+        cleanName.includes('大野') ||
+        cleanEmail.startsWith('imoto')
+      ) {
+        if (u.role !== '管理者') {
+          needsUpdate = true;
+          return { ...u, role: '管理者' as UserRole };
+        }
+      }
+      return u;
+    });
+
+    if (needsUpdate) {
+      setAllUsers(sanitizedAllUsers);
+      localStorage.setItem(STORAGE_KEY_ALL_USERS, JSON.stringify(sanitizedAllUsers));
+    } else {
+      localStorage.setItem(STORAGE_KEY_ALL_USERS, JSON.stringify(allUsers));
+    }
+
     if (user) {
-      const updatedSelf = allUsers.find(u => u.email.toLowerCase() === user.email.toLowerCase());
+      const updatedSelf = sanitizedAllUsers.find(u => u.email.toLowerCase() === user.email.toLowerCase());
       if (updatedSelf) {
-        setUser(updatedSelf);
+        if (user.role !== updatedSelf.role) {
+          setUser(updatedSelf);
+        }
         localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(updatedSelf));
+      } else if (user.email.toLowerCase().includes('oono') || user.email.toLowerCase() === 'r-oono@ikous.co.jp') {
+        const fixedUser: UserProfile = { ...user, role: '管理者' };
+        setUser(fixedUser);
+        localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(fixedUser));
       }
     }
   }, [allUsers]);
