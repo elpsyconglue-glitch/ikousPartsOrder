@@ -2,7 +2,7 @@ import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import { PartHistory, OrderItem } from '../types';
 import { DEFAULT_PART_HISTORIES } from '../defaultData';
-import { db, collection, doc, setDoc, onSnapshot, writeBatch, handleFirestoreError, OperationType } from '../lib/firebase';
+import { db, collection, doc, setDoc, deleteDoc, onSnapshot, writeBatch, handleFirestoreError, OperationType } from '../lib/firebase';
 
 const LOCAL_STORAGE_KEY = 'ship_part_histories';
 
@@ -30,6 +30,16 @@ export async function savePartHistoryToFirestore(item: PartHistory) {
     await setDoc(docRef, item, { merge: true });
   } catch (e) {
     handleFirestoreError(e, OperationType.WRITE, `part_histories/${item.id}`);
+  }
+}
+
+// 単一の PartHistory を Firestore から削除
+export async function deletePartHistoryFromFirestore(id: string) {
+  try {
+    const docRef = doc(db, 'part_histories', id);
+    await deleteDoc(docRef);
+  } catch (e) {
+    handleFirestoreError(e, OperationType.DELETE, `part_histories/${id}`);
   }
 }
 
@@ -339,24 +349,28 @@ export function updateHistoryUnitPrice(
   const targetPartNumber = (targetItem.partNumber || '').trim().toLowerCase();
 
   const updatedHistories = currentHistories.map(h => {
+    let updatedItem: PartHistory | null = null;
     if (h.id === historyId) {
-      return {
+      updatedItem = {
         ...h,
         unitPrice: newUnitPrice,
         quantity: newQuantity !== undefined ? newQuantity : h.quantity,
         remark: newRemark !== undefined ? newRemark : h.remark,
         orderNo: newOrderNo !== undefined ? newOrderNo : h.orderNo
       };
-    }
-    // 同一の品名・部品番号（および船名・機器）のレコードがあれば次回候補のために単価を連動更新
-    if (
+    } else if (
       h.partName.trim().toLowerCase() === targetPartName &&
       (h.partNumber || '').trim().toLowerCase() === targetPartNumber
     ) {
-      return {
+      updatedItem = {
         ...h,
         unitPrice: newUnitPrice
       };
+    }
+
+    if (updatedItem) {
+      savePartHistoryToFirestore(updatedItem);
+      return updatedItem;
     }
     return h;
   });

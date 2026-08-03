@@ -46,6 +46,9 @@ export default function UserManagementModal({ onClose }: Props) {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastRefreshedAt, setLastRefreshedAt] = useState<string>('');
 
+  // ユーザーごとの未適用（変更中）権限
+  const [pendingRoles, setPendingRoles] = useState<{ [email: string]: UserRole }>({});
+
   // モーダルが開いたタイミングで最新データをリアルタイム同期・リフレッシュ
   useEffect(() => {
     handleManualRefresh();
@@ -57,6 +60,23 @@ export default function UserManagementModal({ onClose }: Props) {
     const now = new Date();
     setLastRefreshedAt(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`);
     setTimeout(() => setIsRefreshing(false), 500);
+  };
+
+  // 権限変更の適用処理（押した瞬間に全アカウントへ即時同期）
+  const handleApplyRoleChange = async (targetEmail: string, userName: string) => {
+    const newRole = pendingRoles[targetEmail];
+    if (!newRole) return;
+
+    await updateUserRole(targetEmail, newRole);
+
+    setPendingRoles(prev => {
+      const next = { ...prev };
+      delete next[targetEmail];
+      return next;
+    });
+
+    setAddNotice(`【権限変更適用】${userName} 様 (${targetEmail}) の権限を「${newRole}」に更新し、全アカウントへ即時反映しました。`);
+    setTimeout(() => setAddNotice(null), 5000);
   };
 
   // オンライン・最終アクセスのフォーマット関数
@@ -355,6 +375,8 @@ export default function UserManagementModal({ onClose }: Props) {
                           const isSelf = currentUser?.email.toLowerCase() === u.email.toLowerCase();
                           const isSuspended = u.status === 'suspended';
                           const currentRoleDisplay = u.role === ('システム管理者' as any) ? '管理者' : u.role;
+                          const selectedRole = pendingRoles[u.email] !== undefined ? pendingRoles[u.email] : currentRoleDisplay;
+                          const isRoleChanged = selectedRole !== currentRoleDisplay;
 
                           return (
                             <tr key={u.email} className={`hover:bg-slate-50 transition-colors ${isSuspended ? 'bg-rose-50/40' : ''}`}>
@@ -378,14 +400,19 @@ export default function UserManagementModal({ onClose }: Props) {
                               </td>
 
                               <td className="py-3 px-4">
-                                <div className="relative inline-block">
+                                <div className="flex items-center gap-2">
                                   <select
-                                    value={currentRoleDisplay}
-                                    onChange={e => updateUserRole(u.email, e.target.value as UserRole)}
-                                    className={`text-xs px-2.5 py-1 rounded-lg font-bold border transition-all cursor-pointer ${
-                                      currentRoleDisplay === '管理者'
+                                    value={selectedRole}
+                                    onChange={e => {
+                                      const val = e.target.value as UserRole;
+                                      setPendingRoles(prev => ({ ...prev, [u.email]: val }));
+                                    }}
+                                    className={`text-xs px-2.5 py-1.5 rounded-lg font-bold border transition-all cursor-pointer ${
+                                      isRoleChanged
+                                        ? 'bg-amber-50 text-amber-900 border-amber-400 ring-2 ring-amber-300'
+                                        : selectedRole === '管理者'
                                         ? 'bg-indigo-50 text-indigo-900 border-indigo-300 focus:ring-2 focus:ring-indigo-500'
-                                        : currentRoleDisplay === '一般ユーザー'
+                                        : selectedRole === '一般ユーザー'
                                         ? 'bg-blue-50 text-blue-900 border-blue-300 focus:ring-2 focus:ring-blue-500'
                                         : 'bg-slate-100 text-slate-700 border-slate-300 focus:ring-2 focus:ring-slate-400'
                                     }`}
@@ -394,6 +421,20 @@ export default function UserManagementModal({ onClose }: Props) {
                                     <option value="一般ユーザー">✍️ 一般ユーザー (発注・編集可)</option>
                                     <option value="管理者">👑 管理者 (全権限管理)</option>
                                   </select>
+
+                                  <button
+                                    onClick={() => handleApplyRoleChange(u.email, u.name)}
+                                    disabled={!isRoleChanged}
+                                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                                      isRoleChanged
+                                        ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-md active:scale-95 cursor-pointer ring-2 ring-indigo-400/50'
+                                        : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
+                                    }`}
+                                    title={isRoleChanged ? '変更した権限を確定して全アカウントへ即時同期' : '権限を変更すると「適用」ボタンが点灯します'}
+                                  >
+                                    <CheckCircle2 className={`h-3.5 w-3.5 ${isRoleChanged ? 'text-white' : 'text-slate-400'}`} />
+                                    <span>適用</span>
+                                  </button>
                                 </div>
                               </td>
 

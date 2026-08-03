@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { PartHistory, OrderCategory, ORDER_CATEGORY_TITLE_MAP, ORDER_CATEGORY_CODE_MAP } from '../types';
 import { DEFAULT_SHIP_NAMES } from '../defaultData';
-import { getFiscalYear, updateHistoryUnitPrice, savePartHistories, clearAllPartHistories } from '../utils/csvHelper';
+import { getFiscalYear, updateHistoryUnitPrice, savePartHistories, clearAllPartHistories, deletePartHistoryFromFirestore, savePartHistoryToFirestore } from '../utils/csvHelper';
 import { generateOrderNo as createAutoOrderNo } from '../utils/orderNoHelper';
 import PriceRevisionModal from './PriceRevisionModal';
 import ProtectedActionModal from './ProtectedActionModal';
@@ -237,6 +237,7 @@ export default function BudgetManager({
   const handleDeleteItem = (id: string) => {
     if (confirm('この発注履歴項目を削除しますか？')) {
       const updated = histories.filter(h => h.id !== id);
+      deletePartHistoryFromFirestore(id);
       savePartHistories(updated);
       onHistoriesChange(updated);
     }
@@ -296,6 +297,7 @@ export default function BudgetManager({
     };
 
     const updated = [createdItem, ...histories];
+    savePartHistoryToFirestore(createdItem);
     savePartHistories(updated);
     onHistoriesChange(updated);
 

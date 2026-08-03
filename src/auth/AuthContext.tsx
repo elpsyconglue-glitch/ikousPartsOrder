@@ -308,6 +308,62 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return () => unsubscribe();
   }, []);
 
+  // Firestore の users コレクションをリアルタイム監視（他アカウント・全端末で即時共有）
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'users'), (snapshot) => {
+      if (!snapshot.empty) {
+        const firestoreUsers: UserProfile[] = [];
+        snapshot.forEach(docSnap => {
+          const data = docSnap.data() as UserProfile;
+          if (data && data.email) {
+            firestoreUsers.push(data);
+          }
+        });
+
+        // ユーザー一覧を最新の Firestore データで即時更新
+        setAllUsers(prev => {
+          const map = new Map<string, UserProfile>();
+          INITIAL_USERS.forEach(u => map.set(u.email.toLowerCase(), u));
+          prev.forEach(u => map.set(u.email.toLowerCase(), u));
+          firestoreUsers.forEach(u => map.set(u.email.toLowerCase(), u));
+
+          const updated = Array.from(map.values());
+          try {
+            localStorage.setItem('ship_budget_all_users_cache', JSON.stringify(updated));
+          } catch (e) {}
+          return updated;
+        });
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'users');
+    });
+
+    return () => unsub();
+  }, []);
+
+  // 自分のユーザーアカウント（権限変更・アクセス停止）のリアルタイム監視
+  useEffect(() => {
+    if (!user || !user.email) return;
+    const cleanEmail = user.email.toLowerCase();
+    
+    const unsub = onSnapshot(doc(db, 'users', cleanEmail), (snap) => {
+      if (snap.exists()) {
+        const remoteUser = snap.data() as UserProfile;
+        if (remoteUser) {
+          if (remoteUser.status === 'suspended' && user.status !== 'suspended') {
+            alert(`【アクセス権限停止の通知】\n管理者の操作により、${user.name} 様のアカウントアクセス権限が停止されました。\nシステムを終了します。`);
+            logout();
+          } else if (remoteUser.role && remoteUser.role !== user.role) {
+            setUser(prev => prev ? { ...prev, role: remoteUser.role, status: remoteUser.status } : null);
+            localStorage.setItem(STORAGE_KEY_USER, JSON.stringify({ ...user, role: remoteUser.role, status: remoteUser.status }));
+          }
+        }
+      }
+    });
+
+    return () => unsub();
+  }, [user?.email]);
+
   // ログイン中のユーザーのオンラインハートビート更新 (ログイン時・ハートビート)
   useEffect(() => {
     if (!user || !user.email) return;
