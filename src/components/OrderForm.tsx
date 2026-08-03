@@ -649,13 +649,29 @@ export default function OrderForm({
                   onClick={() => setActiveRowDetails(activeRowDetails === item.id ? null : item.id)}
                   className="w-full text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 py-2 rounded-lg flex items-center justify-center gap-1 transition-colors"
                 >
-                  <span>{activeRowDetails === item.id ? '詳細情報 (船・機器・メーカー・型式) をたたむ' : '詳細情報 (船・機器・メーカー・型式) を設定・確認'}</span>
+                  <span>{activeRowDetails === item.id ? '詳細情報 (注文分類・船名・メーカー・機器名・型式) をたたむ' : '詳細情報 (注文分類・船名・メーカー・機器名・型式) を設定・確認'}</span>
                   {activeRowDetails === item.id ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                 </button>
 
                 {/* 詳細アコーディオン */}
                 {activeRowDetails === item.id && (
                   <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-3 text-xs animate-fadeIn">
+                    {/* 1. 注文の分類 */}
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">注文の分類</label>
+                      <select
+                        className="w-full rounded border-slate-300 p-2 text-xs bg-white font-semibold text-indigo-900"
+                        value={item.orderCategory || '部品'}
+                        onChange={e => handleCellChange(item.id, 'orderCategory', e.target.value as OrderCategory)}
+                      >
+                        <option value="船用品">船用品 (船用品注文書)</option>
+                        <option value="部品">部品 (部品注文書)</option>
+                        <option value="潤滑油">潤滑油 (潤滑油注文書)</option>
+                        <option value="廃油処理">廃油処理 (廃油陸揚依頼書)</option>
+                      </select>
+                    </div>
+
+                    {/* 2. 船名 */}
                     <div>
                       <label className="block font-bold text-slate-600 mb-1">船名</label>
                       <select
@@ -687,17 +703,7 @@ export default function OrderForm({
                       )}
                     </div>
 
-                    <div>
-                      <label className="block font-bold text-slate-600 mb-1">機器名</label>
-                      <input
-                        type="text"
-                        placeholder="例: 主機関"
-                        className="w-full rounded border-slate-300 p-2 text-xs bg-white"
-                        value={item.equipmentName}
-                        onChange={e => handleCellChange(item.id, 'equipmentName', e.target.value)}
-                      />
-                    </div>
-
+                    {/* 3. メーカー (発注先) */}
                     <div>
                       <label className="block font-bold text-slate-600 mb-1">メーカー (発注先)</label>
                       <input
@@ -709,6 +715,19 @@ export default function OrderForm({
                       />
                     </div>
 
+                    {/* 4. 機器名 */}
+                    <div>
+                      <label className="block font-bold text-slate-600 mb-1">機器名</label>
+                      <input
+                        type="text"
+                        placeholder="例: 主機関"
+                        className="w-full rounded border-slate-300 p-2 text-xs bg-white"
+                        value={item.equipmentName}
+                        onChange={e => handleCellChange(item.id, 'equipmentName', e.target.value)}
+                      />
+                    </div>
+
+                    {/* 5. 型式 */}
                     <div>
                       <label className="block font-bold text-slate-600 mb-1">型式</label>
                       <input
@@ -999,26 +1018,6 @@ export default function OrderForm({
                               </div>
                             </div>
 
-                            {/* 機器名 */}
-                            <div>
-                              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                                機器名 <span className="text-indigo-600 font-normal">(候補選択または手入力)</span>
-                              </label>
-                              <input
-                                type="text"
-                                placeholder="候補から選択または手入力..."
-                                className="block w-full rounded border-slate-300 px-2.5 py-1.5 text-xs text-slate-800 bg-white shadow-sm focus:ring-1 focus:ring-indigo-500"
-                                value={item.equipmentName}
-                                onChange={e => handleCellChange(item.id, 'equipmentName', e.target.value)}
-                                list={`equipment-names-${item.id}`}
-                              />
-                              <datalist id={`equipment-names-${item.id}`}>
-                                {uniqueEquipmentNames.map(name => (
-                                  <option key={name} value={name} />
-                                ))}
-                              </datalist>
-                            </div>
-
                             {/* メーカー (発注先) */}
                             <div>
                               <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
@@ -1040,10 +1039,30 @@ export default function OrderForm({
                               <p className="text-[10px] text-slate-400 mt-0.5">※メーカーが異なる場合、発注書が個別に分かれます。</p>
                             </div>
 
-                            {/* 形式 */}
+                            {/* 機器名 */}
                             <div>
                               <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                                形式 <span className="text-indigo-600 font-normal">(候補選択または手入力)</span>
+                                機器名 <span className="text-indigo-600 font-normal">(候補選択または手入力)</span>
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="候補から選択または手入力..."
+                                className="block w-full rounded border-slate-300 px-2.5 py-1.5 text-xs text-slate-800 bg-white shadow-sm focus:ring-1 focus:ring-indigo-500"
+                                value={item.equipmentName}
+                                onChange={e => handleCellChange(item.id, 'equipmentName', e.target.value)}
+                                list={`equipment-names-${item.id}`}
+                              />
+                              <datalist id={`equipment-names-${item.id}`}>
+                                {uniqueEquipmentNames.map(name => (
+                                  <option key={name} value={name} />
+                                ))}
+                              </datalist>
+                            </div>
+
+                            {/* 型式 */}
+                            <div>
+                              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                                型式 <span className="text-indigo-600 font-normal">(候補選択または手入力)</span>
                               </label>
                               <input
                                 type="text"

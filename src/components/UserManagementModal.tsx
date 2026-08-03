@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth, UserProfile } from '../auth/AuthContext';
 import { UserRole } from '../types';
 import ProtectedActionModal from './ProtectedActionModal';
@@ -17,7 +17,9 @@ import {
   AlertCircle,
   X,
   BadgeCheck,
-  UserPlus
+  UserPlus,
+  RefreshCw,
+  Clock
 } from 'lucide-react';
 
 interface Props {
@@ -34,13 +36,62 @@ export default function UserManagementModal({ onClose }: Props) {
     updateUserRole, 
     deleteUser,
     sendVerificationCode,
-    clearGuestLogs
+    clearGuestLogs,
+    refreshUsersAndLogs
   } = useAuth();
 
   const [activeTab, setActiveTab] = useState<'USERS' | 'GUEST_LOGS'>('USERS');
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'ALL' | 'active' | 'suspended'>('ALL');
-  
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<string>('');
+
+  // モーダルが開いたタイミングで最新データをリアルタイム同期・リフレッシュ
+  useEffect(() => {
+    handleManualRefresh();
+  }, []);
+
+  const handleManualRefresh = async () => {
+    setIsRefreshing(true);
+    await refreshUsersAndLogs();
+    const now = new Date();
+    setLastRefreshedAt(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`);
+    setTimeout(() => setIsRefreshing(false), 500);
+  };
+
+  // オンライン・最終アクセスのフォーマット関数
+  const getOnlineStatus = (u: UserProfile) => {
+    const isSelf = currentUser?.email.toLowerCase() === u.email.toLowerCase();
+    if (u.status === 'suspended') {
+      return { isOnline: false, label: '停止中（退職等）', badgeColor: 'bg-rose-100 text-rose-800 border-rose-300' };
+    }
+
+    if (isSelf) {
+      return { isOnline: true, label: 'ログイン中 (自端末)', badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-300 ring-2 ring-emerald-400/30' };
+    }
+
+    if (!u.lastActiveAt) {
+      return { isOnline: false, label: '登録済み (オフライン)', badgeColor: 'bg-slate-100 text-slate-600 border-slate-300' };
+    }
+
+    const lastActiveTime = new Date(u.lastActiveAt).getTime();
+    const nowTime = Date.now();
+    const diffMinutes = Math.floor((nowTime - lastActiveTime) / (1000 * 60));
+
+    // 3分以内にアクティブであれば「ログイン中（オンライン）」と判定
+    if (diffMinutes <= 3) {
+      return { isOnline: true, label: '🟢 ログイン中 (オンライン)', badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-300' };
+    } else if (diffMinutes < 60) {
+      return { isOnline: false, label: `${diffMinutes}分前にアクセス`, badgeColor: 'bg-amber-50 text-amber-900 border-amber-300' };
+    } else if (diffMinutes < 24 * 60) {
+      const hours = Math.floor(diffMinutes / 60);
+      return { isOnline: false, label: `${hours}時間前にアクセス`, badgeColor: 'bg-slate-100 text-slate-700 border-slate-300' };
+    } else {
+      const dateStr = new Date(u.lastActiveAt).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      return { isOnline: false, label: `最終: ${dateStr}`, badgeColor: 'bg-slate-100 text-slate-600 border-slate-300' };
+    }
+  };
+
   // 権限剥奪の対象ユーザー
   const [targetUserToSuspend, setTargetUserToSuspend] = useState<UserProfile | null>(null);
 
@@ -105,16 +156,32 @@ export default function UserManagementModal({ onClose }: Props) {
           </button>
         </div>
 
-        {/* サブバー：管理者情報 & モード切り替えタブ */}
+        {/* サブバー：管理者情報 & 手動更新ボタン & モード切り替えタブ */}
         <div className="bg-slate-100 border-b border-slate-200 px-6 py-2.5 flex items-center justify-between flex-wrap gap-3 text-xs">
-          <div className="flex items-center gap-2 text-slate-700">
-            <span className="font-bold">操作管理者:</span>
-            <span className="font-mono bg-white px-2 py-0.5 rounded border border-slate-200 text-slate-900 font-bold">
-              {currentUser?.name} ({currentUser?.email})
-            </span>
-            <span className="px-2 py-0.5 rounded font-bold text-[10px] bg-indigo-100 text-indigo-800 border border-indigo-300">
-              {currentUser?.role}
-            </span>
+          <div className="flex items-center gap-3 text-slate-700">
+            <div className="flex items-center gap-1.5 font-bold">
+              <span>操作管理者:</span>
+              <span className="font-mono bg-white px-2 py-0.5 rounded border border-slate-200 text-slate-900 font-bold">
+                {currentUser?.name} ({currentUser?.email})
+              </span>
+              <span className="px-2 py-0.5 rounded font-bold text-[10px] bg-indigo-100 text-indigo-800 border border-indigo-300">
+                {currentUser?.role}
+              </span>
+            </div>
+
+            {/* 手動更新ボタン */}
+            <button
+              onClick={handleManualRefresh}
+              disabled={isRefreshing}
+              className="px-2.5 py-1 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-lg shadow-2xs font-bold transition-all cursor-pointer flex items-center gap-1.5 active:scale-95"
+              title="押した瞬間の最新のメンバー状態・ゲストアクセス状況を再読み込み"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 text-indigo-600 ${isRefreshing ? 'animate-spin' : ''}`} />
+              <span>最新状況に更新</span>
+              {lastRefreshedAt && (
+                <span className="text-[10px] font-mono text-slate-400 font-normal">({lastRefreshedAt})</span>
+              )}
+            </button>
           </div>
 
           {/* タブ切り替えボタン */}
@@ -331,17 +398,22 @@ export default function UserManagementModal({ onClose }: Props) {
                               </td>
 
                               <td className="py-3 px-4">
-                                {isSuspended ? (
-                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
-                                    <UserX className="h-3.5 w-3.5 text-rose-600" />
-                                    停止（退職・離職）
-                                  </span>
-                                ) : (
-                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-                                    通常利用可能
-                                  </span>
-                                )}
+                                {(() => {
+                                  const statusInfo = getOnlineStatus(u);
+                                  return (
+                                    <div className="flex flex-col gap-1 items-start">
+                                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${statusInfo.badgeColor}`}>
+                                        {statusInfo.isOnline && (
+                                          <span className="relative flex h-2 w-2">
+                                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                                          </span>
+                                        )}
+                                        <span>{statusInfo.label}</span>
+                                      </span>
+                                    </div>
+                                  );
+                                })()}
                               </td>
 
                               <td className="py-3 px-4 text-center">

@@ -10,6 +10,7 @@ import {
   doc, 
   setDoc, 
   getDoc,
+  getDocs,
   collection,
   addDoc,
   onSnapshot,
@@ -28,6 +29,7 @@ export interface UserProfile {
   status: 'active' | 'suspended'; // active: 通常利用可能, suspended: 離職・異動等による停止
   createdAt: string;     // アカウント開通日 (ISO string)
   lastVerifiedAt: string;// 最終メール認証日 (ISO string)
+  lastActiveAt?: string; // 最終アクティブ・ログイン日時 (ISO string)
   expiresAt: string;     // 年次認証期限 (1年後 ISO string)
 }
 
@@ -83,6 +85,7 @@ interface AuthContextType {
   sendPasswordReset: (email: string) => Promise<{ success: boolean; message: string }>;
   logout: () => void;
   renewAnnualAccount: () => void;
+  refreshUsersAndLogs: () => Promise<void>;
   isAccountExpired: boolean;
   daysUntilExpiration: number | null;
   
@@ -167,18 +170,55 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000;
 
+  // 手動 / イベント駆動で最新ユーザー＆ゲストログを再取得・同期する関数
+  const refreshUsersAndLogs = async () => {
+    try {
+      // Users 取得
+      const usersSnap = await getDocs(collection(db, 'users'));
+      if (!usersSnap.empty) {
+        const list: UserProfile[] = [];
+        usersSnap.forEach(d => {
+          const u = d.data() as UserProfile;
+          if (u && u.email) list.push(u);
+        });
+        setAllUsers(prev => {
+          const map = new Map<string, UserProfile>();
+          INITIAL_USERS.forEach(u => map.set(u.email.toLowerCase(), u));
+          prev.forEach(u => map.set(u.email.toLowerCase(), u));
+          list.forEach(u => map.set(u.email.toLowerCase(), u));
+          return Array.from(map.values());
+        });
+      }
+
+      // Guest Logs 取得
+      const logsSnap = await getDocs(collection(db, 'guest_access_logs'));
+      if (!logsSnap.empty) {
+        const logs: GuestAccessLog[] = [];
+        logsSnap.forEach(d => {
+          const l = d.data() as GuestAccessLog;
+          if (l && l.guestName) logs.push(l);
+        });
+        logs.sort((a, b) => new Date(b.loginAt).getTime() - new Date(a.loginAt).getTime());
+        setGuestAccessLogs(logs);
+      }
+    } catch (e) {
+      console.warn('refreshUsersAndLogs notice:', e);
+    }
+  };
+
   // Firebase Auth の変更リスナー
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
-      if (fbUser) {
+      if (fbUser && fbUser.email) {
         try {
-          const userDocRef = doc(db, 'users', fbUser.uid);
+          const cleanEmail = fbUser.email.toLowerCase();
+          const userDocRef = doc(db, 'users', cleanEmail);
           const snap = await getDoc(userDocRef);
           if (snap.exists()) {
             const profileData = snap.data() as UserProfile;
             setUser(profileData);
             localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(profileData));
-          } else if (fbUser.email) {
+          } else {
             // Firestore ドキュメントがまだ存在しない場合、デフォルト作成
             const now = new Date();
             const oneYearLater = new Date(now.getTime() + ONE_YEAR_MS);
@@ -192,9 +232,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
               status: 'active',
               createdAt: now.toISOString(),
               lastVerifiedAt: now.toISOString(),
+              lastActiveAt: now.toISOString(),
               expiresAt: oneYearLater.toISOString(),
             };
-            await setDoc(userDocRef, newProfile);
+            await setDoc(userDocRef, newProfile, { merge: true });
             setUser(newProfile);
             localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(newProfile));
           }
@@ -239,6 +280,74 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return () => unsub();
   }, []);
 
+  // guest_access_logs コレクションをリアルタイム同期（全端末でゲストログを共有）
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'guest_access_logs'), (snapshot) => {
+      if (!snapshot.empty) {
+        const logs: GuestAccessLog[] = [];
+        snapshot.forEach(docSnap => {
+          const data = docSnap.data() as GuestAccessLog;
+          if (data && data.guestName) {
+            logs.push(data);
+          }
+        });
+        logs.sort((a, b) => new Date(b.loginAt).getTime() - new Date(a.loginAt).getTime());
+        setGuestAccessLogs(logs);
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'guest_access_logs');
+    });
+
+    return () => unsub();
+  }, []);
+
+  // ログイン中のユーザーのオンラインハートビート更新 (30秒ごと)
+  useEffect(() => {
+    if (!user || !user.email) return;
+    const cleanEmail = user.email.toLowerCase();
+    
+    const sendHeartbeat = async () => {
+      const nowIso = new Date().toISOString();
+      try {
+        const userDocRef = doc(db, 'users', cleanEmail);
+        await setDoc(userDocRef, { 
+          lastActiveAt: nowIso 
+        }, { merge: true });
+      } catch (e) {
+        console.warn('Heartbeat update notice:', e);
+      }
+    };
+
+    sendHeartbeat();
+    const timer = setInterval(sendHeartbeat, 30000); // 30秒ごとに送信
+    return () => clearInterval(timer);
+  }, [user?.email]);
+
+  // 自分のユーザーアカウント（権限変更・アクセス停止）のリアルタイム監視
+  useEffect(() => {
+    if (!user || !user.email) return;
+    const cleanEmail = user.email.toLowerCase();
+    
+    const unsub = onSnapshot(doc(db, 'users', cleanEmail), (snap) => {
+      if (snap.exists()) {
+        const remoteUser = snap.data() as UserProfile;
+        if (remoteUser) {
+          // 管理者によりアクセス停止（権限剥奪）された場合
+          if (remoteUser.status === 'suspended' && user.status !== 'suspended') {
+            alert(`【アクセス権限停止の通知】\n管理者の操作により、${user.name} 様のアカウントアクセス権限が停止されました。\nシステムを終了します。`);
+            logout();
+          } else if (remoteUser.role !== user.role) {
+            // 管理者によりロールが変更された場合即時反映
+            setUser(prev => prev ? { ...prev, role: remoteUser.role, status: remoteUser.status } : null);
+            localStorage.setItem(STORAGE_KEY_USER, JSON.stringify({ ...user, role: remoteUser.role, status: remoteUser.status }));
+          }
+        }
+      }
+    });
+
+    return () => unsub();
+  }, [user?.email]);
+
   // 全ユーザーリストの変更をストレージに同期
   useEffect(() => {
     try {
@@ -250,11 +359,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (user) {
       const updatedSelf = allUsers.find(u => u.email.toLowerCase() === user.email.toLowerCase());
       if (updatedSelf && (user.role !== updatedSelf.role || user.status !== updatedSelf.status)) {
-        setUser(updatedSelf);
-        try {
-          localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(updatedSelf));
-        } catch (e) {
-          console.warn('Failed to sync updated self user to localStorage:', e);
+        if (updatedSelf.status === 'suspended') {
+          alert(`【アクセス権限停止の通知】\n管理者の操作により、${user.name} 様のアカウントアクセス権限が停止されました。`);
+          logout();
+        } else {
+          setUser(updatedSelf);
+          try {
+            localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(updatedSelf));
+          } catch (e) {
+            console.warn('Failed to sync updated self user to localStorage:', e);
+          }
         }
       }
     }
@@ -677,9 +791,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   // 管理者専用機能（Firestore に即時書き込み同期）
   const suspendUser = async (targetEmail: string) => {
-    const targetUser = allUsers.find(u => u.email.toLowerCase() === targetEmail.toLowerCase());
+    const clean = targetEmail.toLowerCase();
+    const targetUser = allUsers.find(u => u.email.toLowerCase() === clean);
     setAllUsers(prev => prev.map(u => {
-      if (u.email.toLowerCase() === targetEmail.toLowerCase()) {
+      if (u.email.toLowerCase() === clean) {
         return { ...u, status: 'suspended' };
       }
       return u;
@@ -687,7 +802,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     if (targetUser) {
       try {
-        const userDocRef = doc(db, 'users', targetUser.id || targetUser.email);
+        const userDocRef = doc(db, 'users', clean);
         await setDoc(userDocRef, { ...targetUser, status: 'suspended' }, { merge: true });
       } catch (e) {
         handleFirestoreError(e, OperationType.UPDATE, `users/${targetEmail}`);
@@ -696,9 +811,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const activateUser = async (targetEmail: string) => {
-    const targetUser = allUsers.find(u => u.email.toLowerCase() === targetEmail.toLowerCase());
+    const clean = targetEmail.toLowerCase();
+    const targetUser = allUsers.find(u => u.email.toLowerCase() === clean);
     setAllUsers(prev => prev.map(u => {
-      if (u.email.toLowerCase() === targetEmail.toLowerCase()) {
+      if (u.email.toLowerCase() === clean) {
         return { ...u, status: 'active' };
       }
       return u;
@@ -706,7 +822,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     if (targetUser) {
       try {
-        const userDocRef = doc(db, 'users', targetUser.id || targetUser.email);
+        const userDocRef = doc(db, 'users', clean);
         await setDoc(userDocRef, { ...targetUser, status: 'active' }, { merge: true });
       } catch (e) {
         handleFirestoreError(e, OperationType.UPDATE, `users/${targetEmail}`);
@@ -716,9 +832,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   // ユーザーロール指定変更
   const updateUserRole = async (targetEmail: string, newRole: UserRole) => {
-    const targetUser = allUsers.find(u => u.email.toLowerCase() === targetEmail.toLowerCase());
+    const clean = targetEmail.toLowerCase();
+    const targetUser = allUsers.find(u => u.email.toLowerCase() === clean);
     setAllUsers(prev => prev.map(u => {
-      if (u.email.toLowerCase() === targetEmail.toLowerCase()) {
+      if (u.email.toLowerCase() === clean) {
         return { ...u, role: newRole };
       }
       return u;
@@ -726,14 +843,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     if (targetUser) {
       try {
-        const userDocRef = doc(db, 'users', targetUser.id || targetUser.email);
+        const userDocRef = doc(db, 'users', clean);
         await setDoc(userDocRef, { ...targetUser, role: newRole }, { merge: true });
       } catch (e) {
         handleFirestoreError(e, OperationType.UPDATE, `users/${targetEmail}`);
       }
     }
 
-    if (user && user.email.toLowerCase() === targetEmail.toLowerCase()) {
+    if (user && user.email.toLowerCase() === clean) {
       const updatedUser = { ...user, role: newRole };
       setUser(updatedUser);
       try {
@@ -754,12 +871,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const deleteUser = async (targetEmail: string) => {
-    const targetUser = allUsers.find(u => u.email.toLowerCase() === targetEmail.toLowerCase());
-    setAllUsers(prev => prev.filter(u => u.email.toLowerCase() !== targetEmail.toLowerCase()));
+    const clean = targetEmail.toLowerCase();
+    const targetUser = allUsers.find(u => u.email.toLowerCase() === clean);
+    setAllUsers(prev => prev.filter(u => u.email.toLowerCase() !== clean));
 
     if (targetUser) {
       try {
-        const userDocRef = doc(db, 'users', targetUser.id || targetUser.email);
+        const userDocRef = doc(db, 'users', clean);
         await deleteDoc(userDocRef);
       } catch (e) {
         handleFirestoreError(e, OperationType.DELETE, `users/${targetEmail}`);
@@ -807,6 +925,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         sendPasswordReset,
         logout,
         renewAnnualAccount,
+        refreshUsersAndLogs,
         isAccountExpired,
         daysUntilExpiration,
         isAdmin,
