@@ -19,7 +19,7 @@ import UserManagementModal from './components/UserManagementModal';
 import Logo from './components/Logo';
 
 function AppContent() {
-  const { isAuthenticated, user, logout, daysUntilExpiration, simulateExpireAccount, isAdmin, isReadOnly } = useAuth();
+  const { isAuthenticated, user, logout, daysUntilExpiration, isAdmin, isReadOnly } = useAuth();
 
   const [histories, setHistories] = useState<PartHistory[]>([]);
   const [shipNames, setShipNames] = useState<string[]>(() => getShipNames());
@@ -123,22 +123,13 @@ function AppContent() {
                   <p className="text-[10px] text-slate-400">{user.email}</p>
                 </div>
 
-                {/* 1年経過状態を疑似テストするデモボタン */}
-                <button
-                  type="button"
-                  onClick={simulateExpireAccount}
-                  className="ml-1 px-2 py-0.5 bg-amber-900/60 hover:bg-amber-800 text-amber-200 border border-amber-700/60 rounded text-[10px] font-semibold transition-colors cursor-pointer"
-                  title="【テスト用】アカウントを人工的に開通から1年経過（期限切れ）状態にして年次再認証画面を確認"
-                >
-                  1年経過テスト
-                </button>
-
                 <button
                   onClick={logout}
-                  className="p-1 hover:bg-slate-700 rounded-lg text-slate-400 hover:text-rose-300 transition-colors cursor-pointer"
-                  title="ログアウト"
+                  className="ml-2 flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold shadow-sm transition-all cursor-pointer border border-rose-500/40 active:scale-95"
+                  title="ログアウトしてログイン画面に戻ります"
                 >
-                  <LogOut className="h-3.5 w-3.5" />
+                  <LogOut className="h-4 w-4" />
+                  <span>ログアウト</span>
                 </button>
               </div>
             )}

@@ -137,9 +137,22 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   });
 
-  // 現在ログイン中のユーザー
+  // 現在ログイン中のユーザー (サイトを開くたびにセッション確認)
   const [user, setUser] = useState<UserProfile | null>(() => {
     try {
+      const isSessionActive = sessionStorage.getItem('ikous_session_active');
+      const loginTimeStr = sessionStorage.getItem('ikous_session_time');
+      if (!isSessionActive || !loginTimeStr) {
+        return null; // サイトを開き直したときはログイン画面を表示
+      }
+      const loginTime = parseInt(loginTimeStr, 10);
+      const TWELVE_HOURS_MS = 12 * 60 * 60 * 1000;
+      if (isNaN(loginTime) || Date.now() - loginTime > TWELVE_HOURS_MS) {
+        sessionStorage.removeItem('ikous_session_active');
+        sessionStorage.removeItem('ikous_session_time');
+        return null; // 12時間経過していたらログアウト
+      }
+
       const saved = localStorage.getItem(STORAGE_KEY_USER);
       return saved ? JSON.parse(saved) : null;
     } catch {
@@ -169,6 +182,39 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [pendingVerification, setPendingVerification] = useState<PendingVerification | null>(null);
 
   const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000;
+  const TWELVE_HOURS_MS = 12 * 60 * 60 * 1000;
+
+  // セッション有効化 (ログイン時にコール)
+  const setSessionActive = () => {
+    sessionStorage.setItem('ikous_session_active', 'true');
+    sessionStorage.setItem('ikous_session_time', Date.now().toString());
+  };
+
+  // セッション有効性チェック (サイト表示時・12時間経過チェック)
+  const checkSessionActive = (): boolean => {
+    const isActive = sessionStorage.getItem('ikous_session_active');
+    const loginTimeStr = sessionStorage.getItem('ikous_session_time');
+    if (!isActive || !loginTimeStr) return false;
+    const loginTime = parseInt(loginTimeStr, 10);
+    if (isNaN(loginTime) || Date.now() - loginTime > TWELVE_HOURS_MS) {
+      sessionStorage.removeItem('ikous_session_active');
+      sessionStorage.removeItem('ikous_session_time');
+      return false;
+    }
+    return true;
+  };
+
+  // 12時間のセッション自動判定タイマー (30秒ごとに確認)
+  useEffect(() => {
+    if (!user) return;
+    const interval = setInterval(() => {
+      if (!checkSessionActive()) {
+        alert('【ログイン有効期限切れ】\nログインから12時間が経過したため、自動ログアウトしました。\n恐れ入りますが、再度ログインをお願いいたします。');
+        logout();
+      }
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [user]);
 
   // 手動 / イベント駆動で最新ユーザー＆ゲストログを再取得・同期する関数
   const refreshUsersAndLogs = async () => {
@@ -209,6 +255,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   // Firebase Auth の変更リスナー
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
+      // セッションが無効（サイトを開き直した / 12時間経過）の場合は自動復元しない
+      if (!checkSessionActive()) {
+        return;
+      }
+
       if (fbUser && fbUser.email) {
         try {
           const cleanEmail = fbUser.email.toLowerCase();
@@ -248,60 +299,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return () => unsubscribe();
   }, []);
 
-  // Firestore の users コレクションをリアルタイム同期（他アカウント・全端末で共有）
-  useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'users'), (snapshot) => {
-      if (!snapshot.empty) {
-        const firestoreUsers: UserProfile[] = [];
-        snapshot.forEach(docSnap => {
-          const data = docSnap.data() as UserProfile;
-          if (data && data.email) {
-            firestoreUsers.push(data);
-          }
-        });
-
-        // デフォルト初期ユーザーと統合（重複排除）
-        setAllUsers(prev => {
-          const map = new Map<string, UserProfile>();
-          // 初期値
-          INITIAL_USERS.forEach(u => map.set(u.email.toLowerCase(), u));
-          // ローカルの既存データ
-          prev.forEach(u => map.set(u.email.toLowerCase(), u));
-          // Firestore の最新データで上書き
-          firestoreUsers.forEach(u => map.set(u.email.toLowerCase(), u));
-
-          return Array.from(map.values());
-        });
-      }
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'users');
-    });
-
-    return () => unsub();
-  }, []);
-
-  // guest_access_logs コレクションをリアルタイム同期（全端末でゲストログを共有）
-  useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'guest_access_logs'), (snapshot) => {
-      if (!snapshot.empty) {
-        const logs: GuestAccessLog[] = [];
-        snapshot.forEach(docSnap => {
-          const data = docSnap.data() as GuestAccessLog;
-          if (data && data.guestName) {
-            logs.push(data);
-          }
-        });
-        logs.sort((a, b) => new Date(b.loginAt).getTime() - new Date(a.loginAt).getTime());
-        setGuestAccessLogs(logs);
-      }
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'guest_access_logs');
-    });
-
-    return () => unsub();
-  }, []);
-
-  // ログイン中のユーザーのオンラインハートビート更新 (30秒ごと)
+  // ログイン中のユーザーのオンラインハートビート更新 (ログイン時・ハートビート)
   useEffect(() => {
     if (!user || !user.email) return;
     const cleanEmail = user.email.toLowerCase();
@@ -319,33 +317,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     };
 
     sendHeartbeat();
-    const timer = setInterval(sendHeartbeat, 30000); // 30秒ごとに送信
-    return () => clearInterval(timer);
-  }, [user?.email]);
-
-  // 自分のユーザーアカウント（権限変更・アクセス停止）のリアルタイム監視
-  useEffect(() => {
-    if (!user || !user.email) return;
-    const cleanEmail = user.email.toLowerCase();
-    
-    const unsub = onSnapshot(doc(db, 'users', cleanEmail), (snap) => {
-      if (snap.exists()) {
-        const remoteUser = snap.data() as UserProfile;
-        if (remoteUser) {
-          // 管理者によりアクセス停止（権限剥奪）された場合
-          if (remoteUser.status === 'suspended' && user.status !== 'suspended') {
-            alert(`【アクセス権限停止の通知】\n管理者の操作により、${user.name} 様のアカウントアクセス権限が停止されました。\nシステムを終了します。`);
-            logout();
-          } else if (remoteUser.role !== user.role) {
-            // 管理者によりロールが変更された場合即時反映
-            setUser(prev => prev ? { ...prev, role: remoteUser.role, status: remoteUser.status } : null);
-            localStorage.setItem(STORAGE_KEY_USER, JSON.stringify({ ...user, role: remoteUser.role, status: remoteUser.status }));
-          }
-        }
-      }
-    });
-
-    return () => unsub();
   }, [user?.email]);
 
   // 全ユーザーリストの変更をストレージに同期
@@ -425,6 +396,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     setUser(guestProfile);
     localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(guestProfile));
+    setSessionActive();
 
     return {
       success: true,
@@ -527,6 +499,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     // 3. アプリケーション状態更新＆ログイン完了
     setUser(newProfile);
+    setSessionActive();
     try {
       localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(newProfile));
     } catch (e) {
@@ -613,6 +586,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
       setUser(currentProfile);
       localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(currentProfile));
+      setSessionActive();
 
       return {
         success: true,
@@ -632,6 +606,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }
         setUser(localProfile);
         localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(localProfile));
+        setSessionActive();
         return {
           success: true,
           message: 'ログインに成功しました。'
@@ -764,6 +739,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     setUser(updatedUser);
     localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(updatedUser));
+    setSessionActive();
     setPendingVerification(null);
 
     return {
@@ -776,17 +752,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (user) {
       sendVerificationCode(user.email, user.name);
     }
-  };
-
-  const simulateExpireAccount = () => {
-    if (!user) return;
-    const expiredDate = new Date(Date.now() - 1000).toISOString();
-    const updated = {
-      ...user,
-      expiresAt: expiredDate,
-    };
-    setUser(updated);
-    localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(updated));
   };
 
   // 管理者専用機能（Firestore に即時書き込み同期）
@@ -907,6 +872,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setUser(null);
     setPendingVerification(null);
     localStorage.removeItem(STORAGE_KEY_USER);
+    sessionStorage.removeItem('ikous_session_active');
+    sessionStorage.removeItem('ikous_session_time');
   };
 
   return (
