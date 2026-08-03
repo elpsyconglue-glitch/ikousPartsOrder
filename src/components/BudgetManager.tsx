@@ -29,6 +29,19 @@ import {
   Lock
 } from 'lucide-react';
 
+interface ManualAddItem {
+  id: string;
+  equipmentName: string;
+  partName: string;
+  partNumber: string;
+  manufacturer: string;
+  model: string;
+  quantity: number | '';
+  unit: string;
+  unitPrice: number | '';
+  remark: string;
+}
+
 interface BudgetManagerProps {
   histories: PartHistory[];
   onHistoriesChange: (newHistories: PartHistory[]) => void;
@@ -78,33 +91,16 @@ export default function BudgetManager({
   // 全履歴クリア用保護モーダル
   const [showClearAllModal, setShowClearAllModal] = useState<boolean>(false);
 
-  // 新規履歴の手動追加モーダル
+  // 新規履歴の手動一括追加モーダル
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
-  const [newItem, setNewItem] = useState<{
-    equipmentName: string;
-    partName: string;
-    partNumber: string;
-    manufacturer: string;
-    model: string;
-    quantity: number | '';
-    unit: string;
-    unitPrice: number | '';
+  const [addModalCommon, setAddModalCommon] = useState<{
     orderDate: string;
     orderNo: string;
-    remark: string;
   }>({
-    equipmentName: '',
-    partName: '',
-    partNumber: '',
-    manufacturer: '',
-    model: '',
-    quantity: 1,
-    unit: '個',
-    unitPrice: '',
     orderDate: new Date().toISOString().split('T')[0],
     orderNo: '',
-    remark: ''
   });
+  const [addModalItems, setAddModalItems] = useState<ManualAddItem[]>([]);
 
   // 選択された月および年度の表示用テキストヘルパー
   const getSelectedMonthText = (monthStr: string, yearStr: string) => {
@@ -243,78 +239,106 @@ export default function BudgetManager({
     }
   };
 
-  // 手動実績追加モーダルを開く
+  // 手動実績一括追加モーダルを開く
   const handleOpenAddModal = () => {
     const today = new Date().toISOString().split('T')[0];
     const autoOrderNo = createAutoOrderNo(histories, selectedShip, selectedCategory, today);
-    setNewItem({
-      equipmentName: '',
-      partName: '',
-      partNumber: '',
-      manufacturer: '',
-      model: '',
-      quantity: 1,
-      unit: '個',
-      unitPrice: '',
+    setAddModalCommon({
       orderDate: today,
       orderNo: autoOrderNo,
-      remark: ''
     });
+    setAddModalItems([
+      {
+        id: 'item-1',
+        equipmentName: '',
+        partName: '',
+        partNumber: '',
+        manufacturer: '',
+        model: '',
+        quantity: 1,
+        unit: '個',
+        unitPrice: '',
+        remark: ''
+      }
+    ]);
     setShowAddModal(true);
   };
 
   // 手動追加モーダル内で発注書番号を最新の連番に再計算
   const handleRegenerateModalOrderNo = (targetDate?: string, targetCat?: OrderCategory) => {
-    const dateToUse = targetDate || newItem.orderDate || new Date().toISOString().split('T')[0];
+    const dateToUse = targetDate || addModalCommon.orderDate || new Date().toISOString().split('T')[0];
     const catToUse = targetCat || selectedCategory;
     const autoNo = createAutoOrderNo(histories, selectedShip, catToUse, dateToUse);
-    setNewItem(prev => ({ ...prev, orderNo: autoNo }));
+    setAddModalCommon(prev => ({ ...prev, orderNo: autoNo }));
   };
 
-  // 新規履歴の手動追加
+  // 品目（発注物）行を追加する（直前の機器名・メーカー等を便利に自動継承）
+  const handleAddMoreItemRow = () => {
+    const lastItem = addModalItems[addModalItems.length - 1];
+    setAddModalItems(prev => [
+      ...prev,
+      {
+        id: `item-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        equipmentName: lastItem ? lastItem.equipmentName : '',
+        partName: '',
+        partNumber: '',
+        manufacturer: lastItem ? lastItem.manufacturer : '',
+        model: lastItem ? lastItem.model : '',
+        quantity: 1,
+        unit: lastItem ? lastItem.unit : '個',
+        unitPrice: '',
+        remark: ''
+      }
+    ]);
+  };
+
+  // 各品目行の変更ハンドラー
+  const handleUpdateItemRow = (id: string, field: keyof ManualAddItem, value: any) => {
+    setAddModalItems(prev => prev.map(item => item.id === id ? { ...item, [field]: value } : item));
+  };
+
+  // 品目行の削除ハンドラー
+  const handleRemoveItemRow = (id: string) => {
+    if (addModalItems.length <= 1) return;
+    setAddModalItems(prev => prev.filter(item => item.id !== id));
+  };
+
+  // 新規履歴の手動一括追加実行
   const handleAddNewHistory = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newItem.partName.trim()) {
-      alert('品名を入力してください');
+    const validItems = addModalItems.filter(item => item.partName.trim() !== '');
+    if (validItems.length === 0) {
+      alert('少なくとも1つの品目について「品名」を入力してください。');
       return;
     }
 
-    const createdItem: PartHistory = {
-      id: `manual-${Date.now()}`,
-      shipName: selectedShip,
-      equipmentName: newItem.equipmentName || '全般',
-      manufacturer: newItem.manufacturer || '手入力',
-      model: newItem.model || '-',
-      partName: newItem.partName.trim(),
-      partNumber: newItem.partNumber || '-',
-      unit: newItem.unit || '個',
-      unitPrice: Number(newItem.unitPrice) || 0,
-      quantity: Number(newItem.quantity) || 1,
-      category: selectedCategory,
-      orderDate: newItem.orderDate || new Date().toISOString().split('T')[0],
-      orderNo: newItem.orderNo.trim(),
-      remark: newItem.remark || ''
-    };
+    const orderNoClean = addModalCommon.orderNo.trim();
+    const orderDateClean = addModalCommon.orderDate || new Date().toISOString().split('T')[0];
 
-    const updated = [createdItem, ...histories];
-    savePartHistoryToFirestore(createdItem);
+    const createdHistories: PartHistory[] = validItems.map((item, idx) => ({
+      id: `manual-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
+      shipName: selectedShip,
+      equipmentName: item.equipmentName || '全般',
+      manufacturer: item.manufacturer || '手入力',
+      model: item.model || '-',
+      partName: item.partName.trim(),
+      partNumber: item.partNumber || '-',
+      unit: item.unit || '個',
+      unitPrice: Number(item.unitPrice) || 0,
+      quantity: Number(item.quantity) || 1,
+      category: selectedCategory,
+      orderDate: orderDateClean,
+      orderNo: orderNoClean,
+      remark: item.remark || ''
+    }));
+
+    const updated = [...createdHistories, ...histories];
+    createdHistories.forEach(h => savePartHistoryToFirestore(h));
     savePartHistories(updated);
     onHistoriesChange(updated);
 
     setShowAddModal(false);
-    setNewItem({
-      equipmentName: '',
-      partName: '',
-      partNumber: '',
-      manufacturer: '',
-      model: '',
-      quantity: 1,
-      unit: '個',
-      unitPrice: '',
-      orderDate: new Date().toISOString().split('T')[0],
-      orderNo: '',
-      remark: ''
-    });
+    alert(`【一括登録完了】\n発注書番号「${orderNoClean}」に ${createdHistories.length} 件の発注品目を登録し、即時同期しました！`);
   };
 
   // 未発注のCSVマスタデータを発注履歴データベースから削除
@@ -1009,186 +1033,294 @@ export default function BudgetManager({
         </div>
       )}
 
-      {/* 手動実績追加モーダル */}
+      {/* 手動実績一括追加モーダル */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 space-y-4">
-            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-              <Plus className="h-5 w-5 text-indigo-600" />
-              【{selectedShip}】 発注実績の手動直接入力
-            </h3>
-            <p className="text-xs text-slate-500">
-              過去の発注データや請求確定金額を直接登録します。（自動補完にも反映されます）
-            </p>
-
-            <form onSubmit={handleAddNewHistory} className="space-y-3">
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">機器名</label>
-                  <input
-                    type="text"
-                    placeholder="例: 主機関"
-                    className="w-full rounded-md border-slate-300 px-2.5 py-1.5 text-xs"
-                    value={newItem.equipmentName}
-                    onChange={e => setNewItem({ ...newItem, equipmentName: e.target.value })}
-                  />
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[92vh] flex flex-col overflow-hidden border border-slate-200">
+            {/* モーダルヘッダー */}
+            <div className="px-5 py-4 bg-slate-900 text-white flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="p-1.5 bg-indigo-500/20 rounded-lg text-indigo-400">
+                  <Plus className="h-5 w-5" />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">メーカー</label>
-                  <input
-                    type="text"
-                    placeholder="例: ヤンマーエンジニアリング"
-                    className="w-full rounded-md border-slate-300 px-2.5 py-1.5 text-xs"
-                    value={newItem.manufacturer}
-                    onChange={e => setNewItem({ ...newItem, manufacturer: e.target.value })}
-                  />
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    【{selectedShip}】 発注実績の一括手動登録
+                  </h3>
+                  <p className="text-xs text-slate-300">
+                    同じ発注書番号の中に複数の発注品目を一括で入力・手動追加できます。
+                  </p>
                 </div>
               </div>
+              <button
+                type="button"
+                onClick={() => setShowAddModal(false)}
+                className="text-slate-400 hover:text-white text-lg font-bold p-1 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">品名 *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="例: 燃料噴射弁"
-                  className="w-full rounded-md border-slate-300 px-2.5 py-1.5 text-xs font-bold"
-                  value={newItem.partName}
-                  onChange={e => setNewItem({ ...newItem, partName: e.target.value })}
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">部品番号・規格</label>
-                <input
-                  type="text"
-                  placeholder="例: 129612-53000"
-                  className="w-full rounded-md border-slate-300 px-2.5 py-1.5 text-xs font-mono"
-                  value={newItem.partNumber}
-                  onChange={e => setNewItem({ ...newItem, partNumber: e.target.value })}
-                />
-              </div>
-
-              <div className="grid grid-cols-3 gap-2">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">数量</label>
-                  <input
-                    type="number"
-                    className="w-full rounded-md border-slate-300 px-2.5 py-1.5 text-xs font-bold"
-                    value={newItem.quantity}
-                    onChange={e => setNewItem({ ...newItem, quantity: e.target.value === '' ? '' : Number(e.target.value) })}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">単位</label>
-                  <input
-                    type="text"
-                    className="w-full rounded-md border-slate-300 px-2.5 py-1.5 text-xs"
-                    value={newItem.unit}
-                    onChange={e => setNewItem({ ...newItem, unit: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">単価 (円)</label>
-                  <input
-                    type="number"
-                    placeholder="例: 25000"
-                    className="w-full rounded-md border-slate-300 px-2.5 py-1.5 text-xs font-bold text-indigo-950"
-                    value={newItem.unitPrice}
-                    onChange={e => setNewItem({ ...newItem, unitPrice: e.target.value === '' ? '' : Number(e.target.value) })}
-                  />
-                </div>
-              </div>
-
-              {/* 発注日付 & 発注書番号設定 */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    発注日付 <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="date"
-                    required
-                    className="w-full rounded-md border-slate-300 px-2.5 py-1.5 text-xs bg-white font-mono"
-                    value={newItem.orderDate}
-                    onChange={e => {
-                      const newDate = e.target.value;
-                      setNewItem({ ...newItem, orderDate: newDate });
-                      handleRegenerateModalOrderNo(newDate);
-                    }}
-                  />
-                </div>
-
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="block text-xs font-semibold text-slate-700">
-                      発注書番号 (orderNo)
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => handleRegenerateModalOrderNo()}
-                      className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-0.5 cursor-pointer"
-                      title="現在の船・分類・年度に基づき次の連番を自動算出"
-                    >
-                      <RefreshCw className="h-3 w-3" />
-                      最新連番
-                    </button>
+            <form onSubmit={handleAddNewHistory} className="flex flex-col flex-1 overflow-hidden">
+              <div className="p-5 overflow-y-auto space-y-4 flex-1">
+                {/* ① 共通発注情報ヘッダー */}
+                <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-indigo-950 flex items-center gap-1.5">
+                      <Layers className="h-4 w-4 text-indigo-600" />
+                      共通発注情報（発注書単位）
+                    </span>
+                    <span className="text-xs text-slate-500 font-medium">
+                      対象船舶: <strong className="text-slate-800">{selectedShip}</strong> / 分類: <strong className="text-slate-800">{selectedCategory}</strong>
+                    </span>
                   </div>
 
-                  {/* 分類記号クイック選択ボタン & テキスト入力 */}
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-1">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        発注日付 <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="date"
+                        required
+                        className="w-full rounded-md border-slate-300 px-2.5 py-1.5 text-xs bg-white font-mono"
+                        value={addModalCommon.orderDate}
+                        onChange={e => {
+                          const newDate = e.target.value;
+                          setAddModalCommon(prev => ({ ...prev, orderDate: newDate }));
+                          handleRegenerateModalOrderNo(newDate);
+                        }}
+                      />
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-xs font-semibold text-slate-700">
+                          発注書番号 (orderNo) <span className="text-rose-500">*</span>
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => handleRegenerateModalOrderNo()}
+                          className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-0.5 cursor-pointer"
+                          title="現在の船・分類・年度に基づき次の連番を自動算出"
+                        >
+                          <RefreshCw className="h-3 w-3" />
+                          最新連番再生成
+                        </button>
+                      </div>
                       <input
                         type="text"
-                        placeholder="例: Run2026-B1"
+                        required
+                        placeholder="例: Run2026-S5"
                         className="w-full rounded-md border-slate-300 px-2.5 py-1.5 text-xs font-mono font-bold text-indigo-950 bg-white"
-                        value={newItem.orderNo}
-                        onChange={e => setNewItem({ ...newItem, orderNo: e.target.value })}
+                        value={addModalCommon.orderNo}
+                        onChange={e => setAddModalCommon(prev => ({ ...prev, orderNo: e.target.value }))}
                       />
+                    </div>
+                  </div>
+
+                  {/* 分類記号選択クイックボタン */}
+                  <div className="flex items-center justify-between text-[11px] text-slate-500 pt-2 border-t border-slate-200/80">
+                    <span className="font-medium text-slate-600">記号クイック変更:</span>
+                    <div className="flex gap-1 flex-wrap">
+                      {(['部品', '船用品', '潤滑油', '廃油処理'] as OrderCategory[]).map(cat => {
+                        const code = ORDER_CATEGORY_CODE_MAP[cat];
+                        const isCurrentCat = selectedCategory === cat;
+                        return (
+                          <button
+                            key={cat}
+                            type="button"
+                            onClick={() => handleRegenerateModalOrderNo(undefined, cat)}
+                            className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all cursor-pointer border ${
+                              isCurrentCat 
+                                ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs' 
+                                : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                            }`}
+                            title={`${cat} (${code}) の次の連番を自動セット`}
+                          >
+                            {code} ({cat})
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
 
-                {/* 分類記号選択の補助ラベル・クイック選択ボタン */}
-                <div className="sm:col-span-2 flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-200/80">
-                  <span className="font-medium text-slate-600">記号選択:</span>
-                  <div className="flex gap-1">
-                    {(['部品', '船用品', '潤滑油', '廃油処理'] as OrderCategory[]).map(cat => {
-                      const code = ORDER_CATEGORY_CODE_MAP[cat];
-                      const isCurrentCat = selectedCategory === cat;
-                      return (
-                        <button
-                          key={cat}
-                          type="button"
-                          onClick={() => handleRegenerateModalOrderNo(undefined, cat)}
-                          className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all cursor-pointer border ${
-                            isCurrentCat 
-                              ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs' 
-                              : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
-                          }`}
-                          title={`${cat} (${code}) の次の連番をセット`}
-                        >
-                          {code} ({cat})
-                        </button>
-                      );
-                    })}
+                {/* ② 発注物（品目）リスト */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                      <span>📦 発注品目リスト</span>
+                      <span className="px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-[11px]">
+                        全 {addModalItems.length} 件
+                      </span>
+                    </h4>
+                    <span className="text-[11px] text-slate-500">
+                      同じ発注書番号（{addModalCommon.orderNo || '番号未設定'}）で同時に保存されます
+                    </span>
                   </div>
+
+                  {addModalItems.map((item, index) => (
+                    <div 
+                      key={item.id} 
+                      className="p-3.5 rounded-xl border border-slate-200 bg-white shadow-xs hover:border-slate-300 transition-colors space-y-2.5 relative group"
+                    >
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                        <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                          <span className="w-5 h-5 rounded-full bg-slate-900 text-white flex items-center justify-center text-[11px]">
+                            {index + 1}
+                          </span>
+                          品目 #{index + 1}
+                        </span>
+
+                        {addModalItems.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveItemRow(item.id)}
+                            className="text-xs text-rose-500 hover:text-rose-700 hover:bg-rose-50 px-2 py-1 rounded-lg transition-colors flex items-center gap-1 font-semibold cursor-pointer"
+                            title="この品目を削除"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            <span>削除</span>
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-600 mb-0.5">機器名</label>
+                          <input
+                            type="text"
+                            placeholder="例: 主機関"
+                            className="w-full rounded-md border-slate-300 px-2 py-1 text-xs"
+                            value={item.equipmentName}
+                            onChange={e => handleUpdateItemRow(item.id, 'equipmentName', e.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-600 mb-0.5">メーカー</label>
+                          <input
+                            type="text"
+                            placeholder="例: ヤンマーエンジニアリング"
+                            className="w-full rounded-md border-slate-300 px-2 py-1 text-xs"
+                            value={item.manufacturer}
+                            onChange={e => handleUpdateItemRow(item.id, 'manufacturer', e.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-600 mb-0.5">型式</label>
+                          <input
+                            type="text"
+                            placeholder="例: 6EY26W"
+                            className="w-full rounded-md border-slate-300 px-2 py-1 text-xs"
+                            value={item.model}
+                            onChange={e => handleUpdateItemRow(item.id, 'model', e.target.value)}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">
+                            品名 <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="例: 燃料噴射弁"
+                            className="w-full rounded-md border-slate-300 px-2 py-1 text-xs font-bold"
+                            value={item.partName}
+                            onChange={e => handleUpdateItemRow(item.id, 'partName', e.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-600 mb-0.5">部品番号・規格</label>
+                          <input
+                            type="text"
+                            placeholder="例: 129612-53000"
+                            className="w-full rounded-md border-slate-300 px-2 py-1 text-xs font-mono"
+                            value={item.partNumber}
+                            onChange={e => handleUpdateItemRow(item.id, 'partNumber', e.target.value)}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-600 mb-0.5">数量</label>
+                          <input
+                            type="number"
+                            className="w-full rounded-md border-slate-300 px-2 py-1 text-xs font-bold"
+                            value={item.quantity}
+                            onChange={e => handleUpdateItemRow(item.id, 'quantity', e.target.value === '' ? '' : Number(e.target.value))}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-600 mb-0.5">単位</label>
+                          <input
+                            type="text"
+                            className="w-full rounded-md border-slate-300 px-2 py-1 text-xs"
+                            value={item.unit}
+                            onChange={e => handleUpdateItemRow(item.id, 'unit', e.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-600 mb-0.5">単価 (円)</label>
+                          <input
+                            type="number"
+                            placeholder="例: 25000"
+                            className="w-full rounded-md border-slate-300 px-2 py-1 text-xs font-bold text-indigo-950"
+                            value={item.unitPrice}
+                            onChange={e => handleUpdateItemRow(item.id, 'unitPrice', e.target.value === '' ? '' : Number(e.target.value))}
+                          />
+                        </div>
+                        <div className="col-span-3 sm:col-span-1">
+                          <label className="block text-[11px] font-semibold text-slate-600 mb-0.5">備考</label>
+                          <input
+                            type="text"
+                            placeholder="例: 予備品"
+                            className="w-full rounded-md border-slate-300 px-2 py-1 text-xs"
+                            value={item.remark}
+                            onChange={e => handleUpdateItemRow(item.id, 'remark', e.target.value)}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* 「＋ 品目（発注物）を追加」ボタン */}
+                  <button
+                    type="button"
+                    onClick={handleAddMoreItemRow}
+                    className="w-full py-3 border-2 border-dashed border-indigo-300 hover:border-indigo-500 bg-indigo-50/50 hover:bg-indigo-50 text-indigo-700 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs active:scale-[0.99]"
+                  >
+                    <Plus className="h-4 w-4" />
+                    <span>＋ 品目（発注物）を追加する</span>
+                  </button>
                 </div>
               </div>
 
-              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setShowAddModal(false)}
-                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg cursor-pointer"
-                >
-                  キャンセル
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg cursor-pointer shadow-sm"
-                >
-                  登録保存
-                </button>
+              {/* モーダルフッター */}
+              <div className="px-5 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between shrink-0">
+                <span className="text-xs text-slate-600 font-medium">
+                  入力済みの有効品目: <strong className="text-indigo-950 font-bold">{addModalItems.filter(i => i.partName.trim() !== '').length} 件</strong>
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddModal(false)}
+                    className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-semibold rounded-lg cursor-pointer"
+                  >
+                    キャンセル
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg cursor-pointer shadow-md flex items-center gap-1.5 active:scale-95 transition-all"
+                  >
+                    <CheckCircle2 className="h-4 w-4" />
+                    <span>一括登録保存 (全 {addModalItems.filter(i => i.partName.trim() !== '').length} 件)</span>
+                  </button>
+                </div>
               </div>
             </form>
           </div>
