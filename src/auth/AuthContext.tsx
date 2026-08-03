@@ -792,40 +792,52 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const suspendUser = async (targetEmail: string) => {
     const clean = targetEmail.toLowerCase();
     const targetUser = allUsers.find(u => u.email.toLowerCase() === clean);
-    setAllUsers(prev => prev.map(u => {
-      if (u.email.toLowerCase() === clean) {
-        return { ...u, status: 'suspended' };
-      }
-      return u;
-    }));
-
-    if (targetUser) {
+    
+    setAllUsers(prev => {
+      const updatedList = prev.map(u => {
+        if (u.email.toLowerCase() === clean) {
+          return { ...u, status: 'suspended' as const };
+        }
+        return u;
+      });
       try {
-        const userDocRef = doc(db, 'users', clean);
-        await setDoc(userDocRef, { ...targetUser, status: 'suspended' }, { merge: true });
-      } catch (e) {
-        handleFirestoreError(e, OperationType.UPDATE, `users/${targetEmail}`);
-      }
+        localStorage.setItem('ship_budget_all_users_cache', JSON.stringify(updatedList));
+      } catch (e) {}
+      return updatedList;
+    });
+
+    try {
+      const userDocRef = doc(db, 'users', clean);
+      const updateData = targetUser ? { ...targetUser, status: 'suspended' } : { email: clean, status: 'suspended' };
+      await setDoc(userDocRef, updateData, { merge: true });
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `users/${targetEmail}`);
     }
   };
 
   const activateUser = async (targetEmail: string) => {
     const clean = targetEmail.toLowerCase();
     const targetUser = allUsers.find(u => u.email.toLowerCase() === clean);
-    setAllUsers(prev => prev.map(u => {
-      if (u.email.toLowerCase() === clean) {
-        return { ...u, status: 'active' };
-      }
-      return u;
-    }));
 
-    if (targetUser) {
+    setAllUsers(prev => {
+      const updatedList = prev.map(u => {
+        if (u.email.toLowerCase() === clean) {
+          return { ...u, status: 'active' as const };
+        }
+        return u;
+      });
       try {
-        const userDocRef = doc(db, 'users', clean);
-        await setDoc(userDocRef, { ...targetUser, status: 'active' }, { merge: true });
-      } catch (e) {
-        handleFirestoreError(e, OperationType.UPDATE, `users/${targetEmail}`);
-      }
+        localStorage.setItem('ship_budget_all_users_cache', JSON.stringify(updatedList));
+      } catch (e) {}
+      return updatedList;
+    });
+
+    try {
+      const userDocRef = doc(db, 'users', clean);
+      const updateData = targetUser ? { ...targetUser, status: 'active' } : { email: clean, status: 'active' };
+      await setDoc(userDocRef, updateData, { merge: true });
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `users/${targetEmail}`);
     }
   };
 
@@ -833,20 +845,26 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const updateUserRole = async (targetEmail: string, newRole: UserRole) => {
     const clean = targetEmail.toLowerCase();
     const targetUser = allUsers.find(u => u.email.toLowerCase() === clean);
-    setAllUsers(prev => prev.map(u => {
-      if (u.email.toLowerCase() === clean) {
-        return { ...u, role: newRole };
-      }
-      return u;
-    }));
 
-    if (targetUser) {
+    setAllUsers(prev => {
+      const updatedList = prev.map(u => {
+        if (u.email.toLowerCase() === clean) {
+          return { ...u, role: newRole };
+        }
+        return u;
+      });
       try {
-        const userDocRef = doc(db, 'users', clean);
-        await setDoc(userDocRef, { ...targetUser, role: newRole }, { merge: true });
-      } catch (e) {
-        handleFirestoreError(e, OperationType.UPDATE, `users/${targetEmail}`);
-      }
+        localStorage.setItem('ship_budget_all_users_cache', JSON.stringify(updatedList));
+      } catch (e) {}
+      return updatedList;
+    });
+
+    try {
+      const userDocRef = doc(db, 'users', clean);
+      const updateData = targetUser ? { ...targetUser, role: newRole } : { email: clean, role: newRole };
+      await setDoc(userDocRef, updateData, { merge: true });
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `users/${targetEmail}`);
     }
 
     if (user && user.email.toLowerCase() === clean) {
