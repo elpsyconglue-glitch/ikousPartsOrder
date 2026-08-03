@@ -19,7 +19,7 @@ import UserManagementModal from './components/UserManagementModal';
 import Logo from './components/Logo';
 
 function AppContent() {
-  const { isAuthenticated, user, logout, daysUntilExpiration, isAdmin, isReadOnly } = useAuth();
+  const { isAuthenticated, user, logout, daysUntilExpiration, isAdmin, isReadOnly, refreshUsersAndLogs } = useAuth();
 
   const [histories, setHistories] = useState<PartHistory[]>([]);
   const [shipNames, setShipNames] = useState<string[]>(() => getShipNames());
@@ -152,6 +152,7 @@ function AppContent() {
                   alert('【権限エラー】社員・アカウント権限管理画面を開くには「管理者」権限が必要です。（大野様など管理者が変更可能です）');
                   return;
                 }
+                refreshUsersAndLogs();
                 setShowUserManagementModal(true);
               }}
               type="button"

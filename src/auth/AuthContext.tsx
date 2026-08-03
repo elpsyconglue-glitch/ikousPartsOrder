@@ -232,7 +232,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           INITIAL_USERS.forEach(u => map.set(u.email.toLowerCase(), u));
           prev.forEach(u => map.set(u.email.toLowerCase(), u));
           list.forEach(u => map.set(u.email.toLowerCase(), u));
-          return Array.from(map.values());
+          const updated = Array.from(map.values());
+          try {
+            localStorage.setItem('ship_budget_all_users_cache', JSON.stringify(updated));
+          } catch (e) {}
+          return updated;
         });
       }
 
@@ -251,6 +255,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       console.warn('refreshUsersAndLogs notice:', e);
     }
   };
+
+  // アプリケーション起動時に一度クラウドから最新ユーザー＆ゲストログを取得
+  useEffect(() => {
+    refreshUsersAndLogs();
+  }, []);
 
   // Firebase Auth の変更リスナー
   useEffect(() => {
@@ -391,8 +400,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       status: 'active',
       createdAt: now.toISOString(),
       lastVerifiedAt: now.toISOString(),
+      lastActiveAt: now.toISOString(),
       expiresAt: new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString(),
     };
+
+    // Firestore にユーザー情報及びログを同期保存
+    try {
+      await setDoc(doc(db, 'users', guestEmail.toLowerCase()), guestProfile, { merge: true });
+    } catch (e) {
+      console.warn('Firestore guest profile notice:', e);
+    }
 
     setUser(guestProfile);
     localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(guestProfile));
@@ -457,13 +474,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const initialRole = getInitialRoleForUser(assignedName, cleanEmail);
 
     let userId = 'usr_' + Date.now();
-    let isFirebaseSuccess = false;
 
     // 1. Firebase Auth 登録試行
     try {
       const credential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
       userId = credential.user.uid;
-      isFirebaseSuccess = true;
     } catch (fbErr: any) {
       console.warn('Firebase createUserWithEmailAndPassword notice (falling back to local user store):', fbErr);
       if (fbErr?.code === 'auth/email-already-in-use') {
@@ -475,7 +490,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (fbErr?.code === 'auth/weak-password') {
         return { success: false, message: 'パスワードは6文字以上で入力してください。' };
       }
-      // その他のFirebase Authエラー（未有効化や接続不可等）はローカルアカウント生成へフォールバック
     }
 
     const newProfile: UserProfile = {
@@ -487,14 +501,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       status: 'active',
       createdAt: now.toISOString(),
       lastVerifiedAt: now.toISOString(),
+      lastActiveAt: now.toISOString(),
       expiresAt: oneYearLater.toISOString(),
     };
 
-    // 2. Firestore 保存試行（可能な場合クラウドに保存）
+    // 2. Firestore 保存試行（cleanEmail キーで書き込み）
     try {
-      await setDoc(doc(db, 'users', userId), newProfile);
+      await setDoc(doc(db, 'users', cleanEmail), newProfile, { merge: true });
     } catch (fsErr) {
-      console.warn('Firestore setDoc notice (using local storage):', fsErr);
+      console.warn('Firestore setDoc notice:', fsErr);
     }
 
     // 3. アプリケーション状態更新＆ログイン完了
@@ -530,17 +545,19 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return { success: false, message: 'メールアドレスとパスワードを入力してください。' };
     }
 
+    const nowIso = new Date().toISOString();
+
     // 1. Firebase Auth でのログイン試行
     try {
       const credential = await signInWithEmailAndPassword(auth, cleanEmail, password);
       const fbUser = credential.user;
 
-      // Firestore からプロファイル取得
+      // Firestore からプロファイル取得 (cleanEmail キーで統一)
       let currentProfile: UserProfile;
       try {
-        const snap = await getDoc(doc(db, 'users', fbUser.uid));
+        const snap = await getDoc(doc(db, 'users', cleanEmail));
         if (snap.exists()) {
-          currentProfile = snap.data() as UserProfile;
+          currentProfile = { ...(snap.data() as UserProfile), lastActiveAt: nowIso };
         } else {
           const now = new Date();
           const oneYearLater = new Date(now.getTime() + ONE_YEAR_MS);
@@ -554,16 +571,17 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             status: 'active',
             createdAt: now.toISOString(),
             lastVerifiedAt: now.toISOString(),
+            lastActiveAt: nowIso,
             expiresAt: oneYearLater.toISOString(),
           };
-          await setDoc(doc(db, 'users', fbUser.uid), currentProfile);
         }
+        await setDoc(doc(db, 'users', cleanEmail), currentProfile, { merge: true });
       } catch {
-        // Firestore 失敗時はローカルプロファイル参照または新規作成
+        // Firestore 失敗時
         const existingLocal = allUsers.find(u => u.email.toLowerCase() === cleanEmail);
         const now = new Date();
         const oneYearLater = new Date(now.getTime() + ONE_YEAR_MS);
-        currentProfile = existingLocal || {
+        currentProfile = existingLocal ? { ...existingLocal, lastActiveAt: nowIso } : {
           id: fbUser.uid,
           name: cleanEmail.split('@')[0],
           email: cleanEmail,
@@ -572,6 +590,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           status: 'active',
           createdAt: now.toISOString(),
           lastVerifiedAt: now.toISOString(),
+          lastActiveAt: nowIso,
           expiresAt: oneYearLater.toISOString(),
         };
       }
@@ -604,9 +623,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             message: '【アクセス拒否】このアカウントは管理者により停止されています。'
           };
         }
-        setUser(localProfile);
-        localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(localProfile));
+        const updatedLocal = { ...localProfile, lastActiveAt: nowIso };
+        setUser(updatedLocal);
+        localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(updatedLocal));
         setSessionActive();
+
+        try {
+          await setDoc(doc(db, 'users', cleanEmail), updatedLocal, { merge: true });
+        } catch (e) {}
+
         return {
           success: true,
           message: 'ログインに成功しました。'
@@ -714,6 +739,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         ...target,
         name: pendingVerification.name || target.name,
         lastVerifiedAt: now.toISOString(),
+        lastActiveAt: now.toISOString(),
         expiresAt: oneYearLater.toISOString(),
       };
       
@@ -732,9 +758,17 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         status: 'active',
         createdAt: now.toISOString(),
         lastVerifiedAt: now.toISOString(),
+        lastActiveAt: now.toISOString(),
         expiresAt: oneYearLater.toISOString(),
       };
       setAllUsers(prev => [updatedUser, ...prev]);
+    }
+
+    // Firestore に保存して他端末でも参照可能にする
+    try {
+      setDoc(doc(db, 'users', pendingVerification.email.toLowerCase()), updatedUser, { merge: true });
+    } catch (e) {
+      console.warn('Firestore setDoc verifyCode notice:', e);
     }
 
     setUser(updatedUser);
