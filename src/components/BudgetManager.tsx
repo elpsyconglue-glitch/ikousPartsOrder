@@ -6,6 +6,7 @@ import { generateOrderNo as createAutoOrderNo } from '../utils/orderNoHelper';
 import PriceRevisionModal from './PriceRevisionModal';
 import ProtectedActionModal from './ProtectedActionModal';
 import ShipManagementModal from './ShipManagementModal';
+import BudgetAnalyticsGraph from './BudgetAnalyticsGraph';
 import { useAuth } from '../auth/AuthContext';
 import { 
   Ship, 
@@ -668,6 +669,15 @@ export default function BudgetManager({
             );
           })}
         </div>
+
+        {/* 📊 発注金額分析・集計グラフ */}
+        <BudgetAnalyticsGraph
+          histories={actualOrders}
+          selectedShip={selectedShip}
+          selectedCategory={selectedCategory}
+          selectedYear={selectedYear}
+          selectedMonth={selectedMonth}
+        />
 
         {/* 発注履歴・金額一覧テーブル */}
         <div className="border border-slate-200 rounded-xl overflow-hidden shadow-xs">

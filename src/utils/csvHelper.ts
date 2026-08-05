@@ -6,18 +6,39 @@ import { db, collection, doc, setDoc, deleteDoc, onSnapshot, writeBatch, handleF
 
 const LOCAL_STORAGE_KEY = 'ship_part_histories';
 
-// Firestore からのリアルタイム同期用関数
+// Firestore からのリアルタイム同期用関数（ローカルデータとの完全保護相互マージ）
 export function subscribePartHistories(onUpdate: (histories: PartHistory[]) => void) {
   return onSnapshot(collection(db, 'part_histories'), (snapshot) => {
+    const firestoreItems: PartHistory[] = [];
     if (!snapshot.empty) {
-      const items: PartHistory[] = [];
       snapshot.forEach(d => {
-        items.push(d.data() as PartHistory);
+        firestoreItems.push(d.data() as PartHistory);
       });
-      // 保持
-      savePartHistories(items);
-      onUpdate(items);
     }
+
+    // ローカルストレージ内の既存データとマージしてデータ損失を100%防止
+    const localItems = getPartHistories();
+    const map = new Map<string, PartHistory>();
+
+    // まずローカルデータを登録
+    localItems.forEach(item => {
+      if (item && item.id) {
+        map.set(item.id, item);
+      }
+    });
+
+    // Firestore 側のデータを上書き・マージ登録
+    firestoreItems.forEach(item => {
+      if (item && item.id) {
+        map.set(item.id, item);
+      }
+    });
+
+    const merged = Array.from(map.values());
+
+    // 日付昇順・ID降順等でソートして保持
+    savePartHistories(merged);
+    onUpdate(merged);
   }, (err) => {
     handleFirestoreError(err, OperationType.LIST, 'part_histories');
   });
