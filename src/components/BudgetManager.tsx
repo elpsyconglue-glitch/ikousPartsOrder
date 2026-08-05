@@ -76,12 +76,52 @@ export default function BudgetManager({
   // 選択されている月（'ALL' または '1'~'12'）
   const [selectedMonth, setSelectedMonth] = useState<string>('ALL');
 
-  // 編集中の行IDと一時保存値
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editPrice, setEditPrice] = useState<number | ''>('');
-  const [editQty, setEditQty] = useState<number | ''>('');
-  const [editRemark, setEditRemark] = useState<string>('');
-  const [editOrderNo, setEditOrderNo] = useState<string>('');
+  // 履歴詳細編集モーダル用状態
+  const [showEditModal, setShowEditModal] = useState<boolean>(false);
+  const [editingHistoryItem, setEditingHistoryItem] = useState<PartHistory | null>(null);
+
+  // 履歴データの詳細編集モーダルを開く
+  const handleStartEdit = (item: PartHistory) => {
+    setEditingHistoryItem({ ...item });
+    setShowEditModal(true);
+  };
+
+  // 編集内容を確定保存
+  const handleSaveFullEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingHistoryItem) return;
+    if (!editingHistoryItem.partName.trim()) {
+      alert('品名を入力してください');
+      return;
+    }
+
+    const updatedItem: PartHistory = {
+      ...editingHistoryItem,
+      partName: editingHistoryItem.partName.trim(),
+      orderNo: (editingHistoryItem.orderNo || '').trim(),
+      quantity: Number(editingHistoryItem.quantity) || 1,
+      unitPrice: Number(editingHistoryItem.unitPrice) || 0,
+    };
+
+    // Firestore へ保存（全端末へ即時共有）
+    savePartHistoryToFirestore(updatedItem);
+
+    // ローカル＆Firestore保持リストを更新し、同品名・同部品番号の過去単価候補も連動更新
+    const updatedHistories = updateHistoryUnitPrice(
+      histories,
+      updatedItem.id,
+      updatedItem.unitPrice,
+      updatedItem.quantity,
+      updatedItem.remark || '',
+      updatedItem.orderNo
+    ).map(h => h.id === updatedItem.id ? updatedItem : h);
+
+    savePartHistories(updatedHistories);
+    onHistoriesChange(updatedHistories);
+
+    setShowEditModal(false);
+    setEditingHistoryItem(null);
+  };
 
   // 印刷モーダルの表示状態
   const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
@@ -203,32 +243,6 @@ export default function BudgetManager({
       return sum + (qty * price);
     }, 0);
   }, [filteredHistories]);
-
-  // 単価・金額・発注書番号の編集開始
-  const handleStartEdit = (item: PartHistory) => {
-    setEditingId(item.id);
-    setEditPrice(item.unitPrice || '');
-    setEditQty(item.quantity !== undefined ? item.quantity : 1);
-    setEditRemark(item.remark || '');
-    setEditOrderNo(item.orderNo || '');
-  };
-
-  // 単価・金額・発注書番号の編集保存（次回自動反映）
-  const handleSaveEdit = (id: string) => {
-    const newPrice = typeof editPrice === 'number' ? editPrice : 0;
-    const newQty = typeof editQty === 'number' ? editQty : 1;
-
-    const updated = updateHistoryUnitPrice(
-      histories,
-      id,
-      newPrice,
-      newQty,
-      editRemark,
-      editOrderNo.trim()
-    );
-    onHistoriesChange(updated);
-    setEditingId(null);
-  };
 
   // 履歴行の削除
   const handleDeleteItem = (id: string) => {
@@ -719,9 +733,8 @@ export default function BudgetManager({
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
                   {filteredHistories.map(item => {
-                    const isEditing = editingId === item.id;
-                    const qty = isEditing ? (typeof editQty === 'number' ? editQty : 0) : (item.quantity || 1);
-                    const price = isEditing ? (typeof editPrice === 'number' ? editPrice : 0) : (item.unitPrice || 0);
+                    const qty = item.quantity !== undefined ? item.quantity : 1;
+                    const price = item.unitPrice || 0;
                     const amount = qty * price;
 
                     return (
@@ -730,17 +743,7 @@ export default function BudgetManager({
                           {item.orderDate || '-'}
                         </td>
                         <td className="py-2.5 px-3 font-mono text-slate-500 text-[11px]">
-                          {isEditing ? (
-                            <input
-                              type="text"
-                              placeholder="例: Run2026-B1"
-                              className="w-28 rounded border-indigo-300 px-1.5 py-1 font-mono text-xs font-bold text-indigo-950 bg-indigo-50/50"
-                              value={editOrderNo}
-                              onChange={e => setEditOrderNo(e.target.value)}
-                            />
-                          ) : (
-                            item.orderNo || '-'
-                          )}
+                          {item.orderNo || '-'}
                         </td>
                         <td className="py-2.5 px-3 font-semibold text-slate-800">
                           {item.equipmentName || '-'}
@@ -757,33 +760,14 @@ export default function BudgetManager({
                         
                         {/* 数量 */}
                         <td className="py-2.5 px-3 text-right font-mono font-semibold text-slate-800">
-                          {isEditing ? (
-                            <input
-                              type="number"
-                              className="w-16 rounded border-indigo-300 px-1.5 py-1 text-right font-bold text-indigo-950 bg-indigo-50/50"
-                              value={editQty}
-                              onChange={e => setEditQty(e.target.value === '' ? '' : Number(e.target.value))}
-                            />
-                          ) : (
-                            `${qty} ${item.unit || '個'}`
-                          )}
+                          {`${qty} ${item.unit || '個'}`}
                         </td>
 
-                        {/* 単価（後入力・編集） */}
+                        {/* 単価 */}
                         <td className="py-2.5 px-3 text-right font-mono font-semibold">
-                          {isEditing ? (
-                            <input
-                              type="number"
-                              placeholder="単価を入力"
-                              className="w-24 rounded border-indigo-300 px-1.5 py-1 text-right font-bold text-indigo-950 bg-indigo-50/50"
-                              value={editPrice}
-                              onChange={e => setEditPrice(e.target.value === '' ? '' : Number(e.target.value))}
-                            />
-                          ) : (
-                            <span className={price > 0 ? 'text-slate-900' : 'text-amber-600 font-bold bg-amber-50 px-1.5 py-0.5 rounded'}>
-                              {price > 0 ? `¥${price.toLocaleString()}` : '未確定 (後入力可)'}
-                            </span>
-                          )}
+                          <span className={price > 0 ? 'text-slate-900' : 'text-amber-600 font-bold bg-amber-50 px-1.5 py-0.5 rounded'}>
+                            {price > 0 ? `¥${price.toLocaleString()}` : '未確定'}
+                          </span>
                         </td>
 
                         {/* 金額 */}
@@ -793,48 +777,28 @@ export default function BudgetManager({
 
                         {/* 備考 */}
                         <td className="py-2.5 px-3 text-slate-500 max-w-[140px] truncate">
-                          {isEditing ? (
-                            <input
-                              type="text"
-                              className="w-full rounded border-indigo-300 px-1.5 py-1 text-xs bg-indigo-50/50"
-                              value={editRemark}
-                              onChange={e => setEditRemark(e.target.value)}
-                            />
-                          ) : (
-                            item.remark || '-'
-                          )}
+                          {item.remark || '-'}
                         </td>
 
                         {/* 操作ボタン */}
                         <td className="py-2.5 px-3 text-center">
                           {isReadOnly ? (
                             <span className="text-[10px] text-slate-400 font-medium">閲覧のみ</span>
-                          ) : isEditing ? (
-                            <div className="flex items-center justify-center gap-1">
-                              <button
-                                onClick={() => handleSaveEdit(item.id)}
-                                type="button"
-                                className="inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold px-2 py-1 rounded transition-colors cursor-pointer shadow-xs"
-                                title="確定して次回からの候補単価に反映"
-                              >
-                                <Save className="h-3 w-3" />
-                                保存・連動
-                              </button>
-                            </div>
                           ) : (
                             <div className="flex items-center justify-center gap-1.5">
                               <button
                                 onClick={() => handleStartEdit(item)}
                                 type="button"
-                                className="p-1 text-indigo-600 hover:bg-indigo-50 rounded transition-colors cursor-pointer"
-                                title="金額・数量を後入力/修正"
+                                className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer border border-indigo-200 shadow-2xs hover:border-indigo-300 flex items-center gap-1 text-[11px] font-bold"
+                                title="全項目（品名・分類・日付・個数・単価等）を詳細修正"
                               >
                                 <Edit3 className="h-3.5 w-3.5" />
+                                <span>詳細修正</span>
                               </button>
                               <button
                                 onClick={() => handleDeleteItem(item.id)}
                                 type="button"
-                                className="p-1 text-rose-500 hover:bg-rose-50 rounded transition-colors cursor-pointer"
+                                className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer border border-rose-100 shadow-2xs hover:border-rose-200"
                                 title="削除"
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
@@ -1329,6 +1293,274 @@ export default function BudgetManager({
                   >
                     <CheckCircle2 className="h-4 w-4" />
                     <span>一括登録保存 (全 {addModalItems.filter(i => i.partName.trim() !== '').length} 件)</span>
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 発注履歴データ全項目詳細修正モーダル */}
+      {showEditModal && editingHistoryItem && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[92vh] flex flex-col overflow-hidden border border-slate-200">
+            {/* モーダルヘッダー */}
+            <div className="px-5 py-4 bg-slate-900 text-white flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="p-1.5 bg-indigo-500/20 rounded-lg text-indigo-400">
+                  <Edit3 className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    発注履歴データの詳細修正・更新
+                  </h3>
+                  <p className="text-xs text-slate-300">
+                    品名・分類・日付・単価・個数・機器名など全項目を自由に変更できます。
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setShowEditModal(false); setEditingHistoryItem(null); }}
+                className="text-slate-400 hover:text-white text-lg font-bold p-1 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveFullEdit} className="flex flex-col flex-1 overflow-hidden">
+              <div className="p-5 overflow-y-auto space-y-4 flex-1">
+                {/* 1. 船舶 & 分類選択 */}
+                <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-3">
+                  <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <Ship className="h-4 w-4 text-indigo-600" />
+                    <span>対象船舶 & 予算分類</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        船舶名 <span className="text-rose-500">*</span>
+                      </label>
+                      <select
+                        required
+                        className="w-full rounded-md border-slate-300 px-2.5 py-1.5 text-xs bg-white font-bold text-slate-800"
+                        value={editingHistoryItem.shipName || selectedShip}
+                        onChange={e => setEditingHistoryItem({ ...editingHistoryItem, shipName: e.target.value })}
+                      >
+                        {activeShipNames.map(ship => (
+                          <option key={ship} value={ship}>{ship}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        注文分類 <span className="text-rose-500">*</span>
+                      </label>
+                      <select
+                        required
+                        className="w-full rounded-md border-slate-300 px-2.5 py-1.5 text-xs bg-white font-bold text-indigo-950"
+                        value={editingHistoryItem.category || selectedCategory}
+                        onChange={e => setEditingHistoryItem({ ...editingHistoryItem, category: e.target.value as OrderCategory })}
+                      >
+                        <option value="部品">部品</option>
+                        <option value="船用品">船用品</option>
+                        <option value="潤滑油">潤滑油</option>
+                        <option value="廃油処理">廃油処理</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. 発注日付 & 発注書番号 */}
+                <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-3">
+                  <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <Calendar className="h-4 w-4 text-indigo-600" />
+                    <span>発注番号 & 発注日</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        発注日付 <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="date"
+                        required
+                        className="w-full rounded-md border-slate-300 px-2.5 py-1.5 text-xs bg-white font-mono"
+                        value={editingHistoryItem.orderDate || ''}
+                        onChange={e => setEditingHistoryItem({ ...editingHistoryItem, orderDate: e.target.value })}
+                      />
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-xs font-semibold text-slate-700">
+                          発注書番号 (orderNo)
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const ship = editingHistoryItem.shipName || selectedShip;
+                            const cat = editingHistoryItem.category || selectedCategory;
+                            const dateStr = editingHistoryItem.orderDate;
+                            const newNo = createAutoOrderNo(histories, ship, cat, dateStr);
+                            setEditingHistoryItem({ ...editingHistoryItem, orderNo: newNo });
+                          }}
+                          className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-0.5 cursor-pointer"
+                        >
+                          <RefreshCw className="h-3 w-3" />
+                          最新連番自動割り振
+                        </button>
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="例: Run2026-B1"
+                        className="w-full rounded-md border-slate-300 px-2.5 py-1.5 text-xs font-mono font-bold text-indigo-950 bg-white"
+                        value={editingHistoryItem.orderNo || ''}
+                        onChange={e => setEditingHistoryItem({ ...editingHistoryItem, orderNo: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. 品目・機器詳細フォーム */}
+                <div className="p-4 rounded-xl border border-slate-200 bg-white space-y-3 shadow-2xs">
+                  <div className="text-xs font-bold text-slate-800 border-b border-slate-100 pb-2">
+                    📦 発注明細（品名・メーカー・規格・金額）の詳細入力
+                  </div>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-0.5">機器名</label>
+                      <input
+                        type="text"
+                        placeholder="例: 主機関"
+                        className="w-full rounded-md border-slate-300 px-2.5 py-1.5 text-xs"
+                        value={editingHistoryItem.equipmentName || ''}
+                        onChange={e => setEditingHistoryItem({ ...editingHistoryItem, equipmentName: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-0.5">メーカー</label>
+                      <input
+                        type="text"
+                        placeholder="例: ヤンマーエンジニアリング"
+                        className="w-full rounded-md border-slate-300 px-2.5 py-1.5 text-xs"
+                        value={editingHistoryItem.manufacturer || ''}
+                        onChange={e => setEditingHistoryItem({ ...editingHistoryItem, manufacturer: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-0.5">型式</label>
+                      <input
+                        type="text"
+                        placeholder="例: 6EY26W"
+                        className="w-full rounded-md border-slate-300 px-2.5 py-1.5 text-xs"
+                        value={editingHistoryItem.model || ''}
+                        onChange={e => setEditingHistoryItem({ ...editingHistoryItem, model: e.target.value })}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">
+                        品名 <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="例: 燃料噴射弁"
+                        className="w-full rounded-md border-slate-300 px-2.5 py-1.5 text-xs font-bold text-slate-900"
+                        value={editingHistoryItem.partName || ''}
+                        onChange={e => setEditingHistoryItem({ ...editingHistoryItem, partName: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-0.5">部品番号・規格</label>
+                      <input
+                        type="text"
+                        placeholder="例: 129612-53000"
+                        className="w-full rounded-md border-slate-300 px-2.5 py-1.5 text-xs font-mono"
+                        value={editingHistoryItem.partNumber || ''}
+                        onChange={e => setEditingHistoryItem({ ...editingHistoryItem, partNumber: e.target.value })}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-0.5">数量</label>
+                      <input
+                        type="number"
+                        className="w-full rounded-md border-slate-300 px-2.5 py-1.5 text-xs font-bold"
+                        value={editingHistoryItem.quantity !== undefined ? editingHistoryItem.quantity : 1}
+                        onChange={e => setEditingHistoryItem({ ...editingHistoryItem, quantity: e.target.value === '' ? 0 : Number(e.target.value) })}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-0.5">単位</label>
+                      <input
+                        type="text"
+                        placeholder="個, 本, set"
+                        className="w-full rounded-md border-slate-300 px-2.5 py-1.5 text-xs"
+                        value={editingHistoryItem.unit || ''}
+                        onChange={e => setEditingHistoryItem({ ...editingHistoryItem, unit: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-0.5">単価 (円)</label>
+                      <input
+                        type="number"
+                        placeholder="例: 25000"
+                        className="w-full rounded-md border-slate-300 px-2.5 py-1.5 text-xs font-bold text-indigo-950"
+                        value={editingHistoryItem.unitPrice !== undefined ? editingHistoryItem.unitPrice : 0}
+                        onChange={e => setEditingHistoryItem({ ...editingHistoryItem, unitPrice: e.target.value === '' ? 0 : Number(e.target.value) })}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-0.5">備考</label>
+                    <input
+                      type="text"
+                      placeholder="例: 定期点検交換用"
+                      className="w-full rounded-md border-slate-300 px-2.5 py-1.5 text-xs"
+                      value={editingHistoryItem.remark || ''}
+                      onChange={e => setEditingHistoryItem({ ...editingHistoryItem, remark: e.target.value })}
+                    />
+                  </div>
+
+                  {/* 合計計算プレビュー */}
+                  <div className="p-2.5 bg-indigo-50/70 rounded-lg border border-indigo-100 flex items-center justify-between text-xs font-semibold">
+                    <span className="text-indigo-900">小計金額（数量 × 単価）:</span>
+                    <span className="font-mono font-bold text-indigo-950 text-sm">
+                      ¥{((Number(editingHistoryItem.quantity) || 1) * (Number(editingHistoryItem.unitPrice) || 0)).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* モーダルフッター */}
+              <div className="px-5 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between shrink-0">
+                <span className="text-xs text-slate-500 font-medium">
+                  ID: <code className="font-mono text-[10px] bg-slate-200 px-1 py-0.5 rounded">{editingHistoryItem.id}</code>
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setShowEditModal(false); setEditingHistoryItem(null); }}
+                    className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-semibold rounded-lg cursor-pointer"
+                  >
+                    キャンセル
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg cursor-pointer shadow-md flex items-center gap-1.5 active:scale-95 transition-all"
+                  >
+                    <CheckCircle2 className="h-4 w-4" />
+                    <span>修正内容を保存確定</span>
                   </button>
                 </div>
               </div>
