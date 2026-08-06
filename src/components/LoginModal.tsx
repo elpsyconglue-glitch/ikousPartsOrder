@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { STAFF_LIST } from '../types';
+import { VESSEL_ACCOUNTS, getEmailByShipName } from '../utils/vesselAccounts';
 import Logo from './Logo';
 import { 
   ShieldCheck, 
@@ -15,7 +16,9 @@ import {
   Lock,
   UserCheck,
   UserPlus,
-  LogIn
+  LogIn,
+  Ship,
+  Anchor
 } from 'lucide-react';
 
 export default function LoginModal() {
@@ -23,13 +26,40 @@ export default function LoginModal() {
     user, 
     signUpWithFirebase,
     signInWithFirebase,
+    loginAsVessel,
     sendPasswordReset,
     loginAsGuest,
     isAccountExpired, 
   } = useAuth();
 
-  // モード選択
-  const [authMode, setAuthMode] = useState<'signin' | 'signup' | 'guest' | 'reset'>('signin');
+  // URLパラメータチェック (?mode=vessel や ?vessel=true または ?ship=いくた 等)
+  const [isVesselUrlMode, setIsVesselUrlMode] = useState<boolean>(false);
+  const [selectedVesselShip, setSelectedVesselShip] = useState<string>('いくた');
+  const [vesselPasswordInput, setVesselPasswordInput] = useState<string>('IKOUS');
+
+  // モード選択 ('signin' | 'signup' | 'guest' | 'reset' | 'vessel')
+  const [authMode, setAuthMode] = useState<'signin' | 'signup' | 'guest' | 'reset' | 'vessel'>('signin');
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const mode = params.get('mode');
+      const vesselParam = params.get('vessel');
+      const shipParam = params.get('ship');
+
+      if (mode === 'vessel' || vesselParam === 'true' || vesselParam === '1' || shipParam) {
+        setIsVesselUrlMode(true);
+        setAuthMode('vessel');
+
+        if (shipParam) {
+          const match = VESSEL_ACCOUNTS.find(v => v.shipName === shipParam || v.shipName.includes(shipParam));
+          if (match) {
+            setSelectedVesselShip(match.shipName);
+          }
+        }
+      }
+    }
+  }, []);
 
   // 入力フォーム状態
   const [emailInput, setEmailInput] = useState<string>(user?.email || '');
@@ -42,6 +72,27 @@ export default function LoginModal() {
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [showGuideModal, setShowGuideModal] = useState<boolean>(false);
+
+  // 船員専用ログイン処理
+  const handleVesselLoginSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setStatusMessage(null);
+    setIsSubmitting(true);
+
+    try {
+      const targetEmail = getEmailByShipName(selectedVesselShip) || '';
+      const res = await loginAsVessel(targetEmail || selectedVesselShip, vesselPasswordInput);
+      if (res.success) {
+        setStatusMessage({ type: 'success', text: res.message });
+      } else {
+        setStatusMessage({ type: 'error', text: res.message });
+      }
+    } catch {
+      setStatusMessage({ type: 'error', text: '船員ログイン処理に失敗しました。' });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   // 1. Firebase 新規アカウント作成
   const handleFirebaseSignUp = async (e: React.FormEvent) => {
@@ -128,21 +179,57 @@ export default function LoginModal() {
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden border border-slate-200">
         
         {/* ヘッダー */}
-        <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white px-8 py-6 text-center relative">
+        <div className={`px-8 py-6 text-center relative transition-all duration-300 ${
+          authMode === 'vessel' 
+            ? 'bg-gradient-to-r from-emerald-950 via-teal-900 to-emerald-950 text-white'
+            : 'bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white'
+        }`}>
           <div className="mb-3 flex justify-center">
             <Logo variant="white-card" className="h-10" />
           </div>
-          <h2 className="text-xl font-black tracking-tight font-mono text-transparent bg-clip-text bg-gradient-to-r from-sky-300 via-indigo-200 to-white">
-            IKOUS Parts Order
-          </h2>
-          <p className="text-xs text-indigo-200 mt-1 flex items-center justify-center gap-1.5 font-sans">
-            <Lock className="h-3.5 w-3.5 text-emerald-400" />
-            <span>株式会社イコーズ 社内専用 船舶部品・資材・予算発注システム</span>
-          </p>
+          {authMode === 'vessel' ? (
+            <>
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-800/60 border border-emerald-500/40 text-emerald-200 text-xs font-bold mb-2">
+                <Ship className="h-4 w-4 text-emerald-400" />
+                <span>船員様・本船専用 注文依頼ポータル</span>
+              </div>
+              <h2 className="text-xl font-black tracking-tight font-sans text-white">
+                乗組員様 ログイン画面
+              </h2>
+              <p className="text-xs text-emerald-200/90 mt-1 flex items-center justify-center gap-1.5 font-sans">
+                <span>乗船されている船名を選んでログインボタンを押してください</span>
+              </p>
+            </>
+          ) : (
+            <>
+              <h2 className="text-xl font-black tracking-tight font-mono text-transparent bg-clip-text bg-gradient-to-r from-sky-300 via-indigo-200 to-white">
+                IKOUS Parts Order
+              </h2>
+              <p className="text-xs text-indigo-200 mt-1 flex items-center justify-center gap-1.5 font-sans">
+                <Lock className="h-3.5 w-3.5 text-emerald-400" />
+                <span>株式会社イコーズ 社内専用 船舶部品・資材・予算発注システム</span>
+              </p>
+            </>
+          )}
         </div>
 
         {/* 認証モード切り替えタブ */}
         <div className="flex border-b border-slate-200 bg-slate-50 text-xs font-bold text-slate-600">
+          <button
+            type="button"
+            onClick={() => { setAuthMode('vessel'); setStatusMessage(null); }}
+            className={`flex-1 py-3 px-2 flex items-center justify-center gap-1 border-b-2 transition-all cursor-pointer ${
+              authMode === 'vessel'
+                ? 'border-emerald-600 text-emerald-700 font-extrabold bg-emerald-50/80'
+                : 'border-transparent hover:bg-slate-100 text-emerald-800'
+            }`}
+          >
+            <Ship className="h-4 w-4 text-emerald-600 shrink-0" />
+            <span className="flex items-center gap-1">
+              船員用 🚢 
+              <span className="text-[9px] bg-amber-200 text-amber-900 font-bold px-1 py-0.5 rounded leading-none shrink-0">開発中</span>
+            </span>
+          </button>
           <button
             type="button"
             onClick={() => { setAuthMode('signin'); setStatusMessage(null); }}
@@ -153,7 +240,7 @@ export default function LoginModal() {
             }`}
           >
             <LogIn className="h-4 w-4" />
-            <span>ログイン</span>
+            <span>陸側ログイン</span>
           </button>
           <button
             type="button"
@@ -164,8 +251,8 @@ export default function LoginModal() {
                 : 'border-transparent hover:bg-slate-100'
             }`}
           >
-            <UserPlus className="h-4 w-4 text-emerald-600" />
-            <span>新規アカウント作成</span>
+            <UserPlus className="h-4 w-4 text-slate-500" />
+            <span>新規登録</span>
           </button>
           <button
             type="button"
@@ -176,8 +263,8 @@ export default function LoginModal() {
                 : 'border-transparent hover:bg-slate-100 text-slate-500'
             }`}
           >
-            <UserCheck className="h-4 w-4 text-emerald-600" />
-            <span>簡易ゲストログイン</span>
+            <UserCheck className="h-4 w-4 text-slate-500" />
+            <span>ゲスト</span>
           </button>
         </div>
 
@@ -215,6 +302,92 @@ export default function LoginModal() {
               )}
               <span>{statusMessage.text}</span>
             </div>
+          )}
+
+          {/* 0. 船員専用ログインモード */}
+          {authMode === 'vessel' && (
+            <form onSubmit={handleVesselLoginSubmit} className="space-y-4">
+              {/* 開発中注意バナー */}
+              <div className="bg-amber-50 border-2 border-amber-300 p-3.5 rounded-xl text-amber-950 text-xs shadow-sm">
+                <div className="flex items-start gap-2.5">
+                  <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-extrabold text-amber-950 text-xs">
+                      ⚠️ 【現在開発中】船員用ログインはテスト開発中の機能です
+                    </p>
+                    <p className="text-[11px] text-amber-800 mt-1 leading-relaxed">
+                      現在調整中のため、一般ユーザー様はお手を触れないようお願いいたします。（※テスト試用・動作検証自体は可能です）
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-emerald-50/90 border border-emerald-200 p-4 rounded-xl space-y-3">
+                <div>
+                  <label className="block text-xs font-bold text-emerald-950 mb-1.5 flex items-center gap-1.5">
+                    <Ship className="h-4 w-4 text-emerald-700" />
+                    <span>乗船中の船名を選択してください</span>
+                    <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    value={selectedVesselShip}
+                    onChange={e => setSelectedVesselShip(e.target.value)}
+                    className="w-full text-sm font-bold text-slate-800 px-4 py-3 border-2 border-emerald-300 rounded-xl focus:ring-2 focus:ring-emerald-500 bg-white shadow-sm cursor-pointer"
+                  >
+                    {VESSEL_ACCOUNTS.map(v => (
+                      <option key={v.shipName} value={v.shipName}>
+                        🚢 {v.shipName} ({v.email})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="pt-1 text-xs text-emerald-900 flex items-center justify-between border-t border-emerald-200/60">
+                  <span>登録メールアドレス:</span>
+                  <span className="font-mono font-bold text-slate-800 bg-white px-2 py-0.5 rounded border border-emerald-200">
+                    {getEmailByShipName(selectedVesselShip)}
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <Lock className="h-4 w-4 text-emerald-700" />
+                    <span>船用ログインパスワード</span>
+                    <span className="text-rose-500">*</span>
+                  </span>
+                  <span className="text-[11px] text-emerald-700 font-semibold">初期共通: IKOUS</span>
+                </label>
+                <input
+                  type="password"
+                  required
+                  placeholder="IKOUS"
+                  value={vesselPasswordInput}
+                  onChange={e => setVesselPasswordInput(e.target.value)}
+                  className="w-full text-sm font-mono font-bold px-4 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 bg-slate-50 focus:bg-white"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="w-full py-3.5 px-4 bg-emerald-700 hover:bg-emerald-800 text-white font-black text-sm rounded-xl shadow-lg shadow-emerald-700/20 hover:shadow-xl transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                {isSubmitting ? (
+                  <>
+                    <RefreshCw className="h-5 w-5 animate-spin" />
+                    <span>ログイン認証中...</span>
+                  </>
+                ) : (
+                  <>
+                    <Ship className="h-5 w-5" />
+                    <span>【{selectedVesselShip}】専用発注画面へログイン</span>
+                    <ArrowRight className="h-4 w-4 ml-1" />
+                  </>
+                )}
+              </button>
+            </form>
           )}
 
           {/* 1. ログインモード (メール & パスワード) */}

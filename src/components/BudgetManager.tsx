@@ -56,19 +56,26 @@ export default function BudgetManager({
   shipNames = DEFAULT_SHIP_NAMES,
   onShipNamesChange
 }: BudgetManagerProps) {
-  const { isAdmin, isReadOnly, canPrint } = useAuth();
+  const { isAdmin, isReadOnly, canPrint, user } = useAuth();
   const activeShipNames = shipNames && shipNames.length > 0 ? shipNames : DEFAULT_SHIP_NAMES;
 
-  // 選択されている船（デフォルトは先頭の船）
-  const [selectedShip, setSelectedShip] = useState<string>(activeShipNames[0]);
+  // 船員アカウントの場合はその所属船を初期選択、なければリスト先頭
+  const initialShip = user?.assignedShip && activeShipNames.includes(user.assignedShip)
+    ? user.assignedShip
+    : activeShipNames[0];
+
+  // 選択されている船
+  const [selectedShip, setSelectedShip] = useState<string>(initialShip);
   const [showShipManagementModal, setShowShipManagementModal] = useState<boolean>(false);
 
-  // 船リストが更新された際、現在選択中の船が削除されていれば最初の船に自動切り替え
+  // 船リスト更新時および船員ログイン時の選択自動調整
   React.useEffect(() => {
-    if (activeShipNames.length > 0 && !activeShipNames.includes(selectedShip)) {
+    if (user?.assignedShip && activeShipNames.includes(user.assignedShip)) {
+      setSelectedShip(user.assignedShip);
+    } else if (activeShipNames.length > 0 && !activeShipNames.includes(selectedShip)) {
       setSelectedShip(activeShipNames[0]);
     }
-  }, [activeShipNames, selectedShip]);
+  }, [user?.assignedShip, activeShipNames]);
   // 選択されている注文カテゴリ（デフォルトは '部品'）
   const [selectedCategory, setSelectedCategory] = useState<OrderCategory>('部品');
   // 選択されている年度（'ALL' または年度数例 2026）

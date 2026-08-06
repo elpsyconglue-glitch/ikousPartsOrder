@@ -19,6 +19,7 @@ import {
   OperationType
 } from '../lib/firebase';
 import { UserRole, GuestAccessLog } from '../types';
+import { getShipNameByEmail, VESSEL_ACCOUNTS } from '../utils/vesselAccounts';
 
 export interface UserProfile {
   id: string;
@@ -31,6 +32,7 @@ export interface UserProfile {
   lastVerifiedAt: string;// 最終メール認証日 (ISO string)
   lastActiveAt?: string; // 最終アクティブ・ログイン日時 (ISO string)
   expiresAt: string;     // 年次認証期限 (1年後 ISO string)
+  assignedShip?: string; // 船員アカウントの場合の固定所属船名 (例: 「いくた」)
 }
 
 /**
@@ -81,6 +83,7 @@ interface AuthContextType {
   verifyCodeAndLogin: (code: string) => { success: boolean; message: string };
   signUpWithFirebase: (email: string, password: string, name: string, department?: string) => Promise<{ success: boolean; message: string }>;
   signInWithFirebase: (email: string, password: string) => Promise<{ success: boolean; message: string }>;
+  loginAsVessel: (emailOrShipName: string, password?: string) => Promise<{ success: boolean; message: string }>;
   loginAsGuest: (guestName?: string) => Promise<{ success: boolean; message: string }>;
   sendPasswordReset: (email: string) => Promise<{ success: boolean; message: string }>;
   logout: () => void;
@@ -89,10 +92,11 @@ interface AuthContextType {
   isAccountExpired: boolean;
   daysUntilExpiration: number | null;
   
-  // 権限ヘルパー
+  // 権限・属性ヘルパー
   isAdmin: boolean;
   isReadOnly: boolean;
   isGuest: boolean;
+  isVesselUser: boolean;
   canPrint: boolean;
   canEdit: boolean;
 
@@ -414,8 +418,76 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const isAdmin = user?.role === '管理者' || (user?.role as string) === 'システム管理者';
   const isGuest = user?.role === 'ゲスト';
   const isReadOnly = user?.role === '閲覧のみ' || user?.role === 'ゲスト';
+  const isVesselUser = !!user?.assignedShip || !!getShipNameByEmail(user?.email || '');
   const canPrint = user?.role !== 'ゲスト'; // ゲストは印刷・PDF出力不可（閲覧のみは可）
   const canEdit = user?.role === '管理者' || user?.role === '一般ユーザー';
+
+  // 船専用アカウントログイン (メールアドレスまたは船名でパスワード「IKOUS」等で即時ログイン)
+  const loginAsVessel = async (emailOrShipName: string, inputPassword?: string) => {
+    const input = emailOrShipName.trim();
+    if (!input) {
+      return { success: false, message: '船名またはメールアドレスを選択・入力してください。' };
+    }
+
+    // 入力がメールアドレスか船名か判定
+    let vesselInfo = VESSEL_ACCOUNTS.find(
+      v => v.email.toLowerCase() === input.toLowerCase() || v.shipName === input
+    );
+
+    if (!vesselInfo) {
+      // 一致するものがない場合、入力に含むものを探索
+      vesselInfo = VESSEL_ACCOUNTS.find(v => v.shipName.includes(input) || v.email.toLowerCase().includes(input.toLowerCase()));
+    }
+
+    if (!vesselInfo) {
+      return { success: false, message: '指定された船・メールアドレスが見つかりません。' };
+    }
+
+    // パスワードチェック（一括デフォルト "IKOUS" か入力パスワード）
+    const pass = (inputPassword || 'IKOUS').trim();
+    if (pass !== 'IKOUS' && pass.toUpperCase() !== 'IKOUS' && pass.length < 3) {
+      return { success: false, message: 'パスワードが正しくありません。（初期共通パスワード: IKOUS）' };
+    }
+
+    const nowIso = new Date().toISOString();
+    const oneYearLater = new Date(Date.now() + ONE_YEAR_MS).toISOString();
+
+    const vesselProfile: UserProfile = {
+      id: `vessel_${vesselInfo.shipName}`,
+      name: `${vesselInfo.shipName} 船員`,
+      email: vesselInfo.email,
+      department: `船員 (${vesselInfo.shipName})`,
+      role: '一般ユーザー',
+      status: 'active',
+      assignedShip: vesselInfo.shipName,
+      createdAt: nowIso,
+      lastVerifiedAt: nowIso,
+      lastActiveAt: nowIso,
+      expiresAt: oneYearLater,
+    };
+
+    // Firestore にプロファイル保存試行
+    try {
+      await setDoc(doc(db, 'users', vesselInfo.email.toLowerCase()), vesselProfile, { merge: true });
+    } catch (e) {
+      console.warn('Firestore vessel profile save notice:', e);
+    }
+
+    setUser(vesselProfile);
+    localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(vesselProfile));
+    setSessionActive();
+
+    // allUsers リストに更新反映
+    setAllUsers(prev => {
+      const filtered = prev.filter(u => u.email.toLowerCase() !== vesselInfo.email.toLowerCase());
+      return [vesselProfile, ...filtered];
+    });
+
+    return {
+      success: true,
+      message: `🚢 【${vesselInfo.shipName}】専用発注ポータルにログインしました！`
+    };
+  };
 
   // 簡易ゲストログイン（誰でも1クリックでアクセス可能。ログイン日時・識別ID等のアクセスログを記録）
   const loginAsGuest = async (customGuestName?: string) => {
@@ -599,6 +671,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const cleanEmail = email.trim().toLowerCase();
     if (!cleanEmail || !password) {
       return { success: false, message: 'メールアドレスとパスワードを入力してください。' };
+    }
+
+    // 船専用アカウントのチェック (パスワード IKOUS でログイン可能)
+    const vesselShipName = getShipNameByEmail(cleanEmail);
+    if (vesselShipName && (password.trim() === 'IKOUS' || password.trim().toUpperCase() === 'IKOUS')) {
+      return loginAsVessel(cleanEmail, password);
     }
 
     const nowIso = new Date().toISOString();
@@ -996,6 +1074,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         verifyCodeAndLogin,
         signUpWithFirebase,
         signInWithFirebase,
+        loginAsVessel,
         loginAsGuest,
         sendPasswordReset,
         logout,
@@ -1006,6 +1085,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         isAdmin,
         isReadOnly,
         isGuest,
+        isVesselUser,
         canPrint,
         canEdit,
         suspendUser,

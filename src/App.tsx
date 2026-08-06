@@ -19,7 +19,7 @@ import UserManagementModal from './components/UserManagementModal';
 import Logo from './components/Logo';
 
 function AppContent() {
-  const { isAuthenticated, user, logout, daysUntilExpiration, isAdmin, isReadOnly, refreshUsersAndLogs } = useAuth();
+  const { isAuthenticated, user, logout, daysUntilExpiration, isAdmin, isReadOnly, isVesselUser, refreshUsersAndLogs } = useAuth();
 
   const [histories, setHistories] = useState<PartHistory[]>([]);
   const [shipNames, setShipNames] = useState<string[]>(() => getShipNames());
@@ -81,8 +81,12 @@ function AppContent() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
       
-      {/* 共通アプリケーションヘッダー（印刷時は非表示） */}
-      <header className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white shadow-md border-b border-indigo-900 print:hidden">
+      {/* 共通アプリケーションヘッダー（船員ユーザー時は深緑色系） */}
+      <header className={`text-white shadow-md print:hidden transition-colors duration-300 ${
+        isVesselUser || user?.assignedShip
+          ? 'bg-gradient-to-r from-emerald-950 via-teal-900 to-emerald-950 border-b border-emerald-800'
+          : 'bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 border-b border-indigo-900'
+      }`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-3">
             <Logo variant="white-card" className="h-9" />
@@ -91,12 +95,22 @@ function AppContent() {
                 <span className="font-mono text-transparent bg-clip-text bg-gradient-to-r from-sky-300 via-indigo-200 to-white text-xl sm:text-2xl">
                   IKOUS Parts Order
                 </span>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-900/90 text-indigo-200 border border-indigo-700/60 hidden md:inline-block">
-                  船舶部品・資材・予算発注管理
-                </span>
+                {user?.assignedShip ? (
+                  <span className="text-[11px] font-black px-2.5 py-0.5 rounded-full bg-emerald-800 text-emerald-100 border border-emerald-500/60 shadow-sm flex items-center gap-1">
+                    <Ship className="h-3.5 w-3.5 text-emerald-300" />
+                    <span>🚢 【{user.assignedShip}】本船専用発注画面</span>
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-900/90 text-indigo-200 border border-indigo-700/60 hidden md:inline-block">
+                    船舶部品・資材・予算発注管理
+                  </span>
+                )}
               </h1>
               <p className="text-xs text-indigo-200/90 hidden sm:block">
-                株式会社イコーズ 全16隻対応 | 部品・船用品・潤滑油・廃油処理 発注書作成 ＆ 予算自動集計
+                {user?.assignedShip 
+                  ? `【${user.assignedShip}】本船からの船用品・部品・潤滑油・廃油処理 注文依頼作成`
+                  : '株式会社イコーズ 全16隻対応 | 部品・船用品・潤滑油・廃油処理 発注書作成 ＆ 予算自動集計'
+                }
               </p>
             </div>
           </div>
@@ -105,22 +119,32 @@ function AppContent() {
           <div className="flex items-center gap-3 flex-wrap">
             {/* ログインユーザー情報＆権限バッジ */}
             {user && (
-              <div className="flex items-center gap-2 bg-slate-800/90 border border-indigo-500/30 px-3 py-1.5 rounded-xl text-xs">
-                <UserCheck className="h-4 w-4 text-emerald-400 shrink-0" />
+              <div className={`flex items-center gap-2 border px-3 py-1.5 rounded-xl text-xs ${
+                user.assignedShip 
+                  ? 'bg-emerald-900/90 border-emerald-500/40' 
+                  : 'bg-slate-800/90 border-indigo-500/30'
+              }`}>
+                {user.assignedShip ? (
+                  <Ship className="h-4 w-4 text-emerald-300 shrink-0" />
+                ) : (
+                  <UserCheck className="h-4 w-4 text-emerald-400 shrink-0" />
+                )}
                 <div className="leading-tight">
                   <div className="flex items-center gap-1.5">
                     <span className="font-bold text-white">{user.name}</span>
                     <span className={`text-[10px] px-1.5 py-0.2 rounded font-bold ${
-                      isAdmin 
+                      user.assignedShip
+                        ? 'bg-emerald-800 text-emerald-100 border border-emerald-600'
+                        : isAdmin 
                         ? 'bg-indigo-900 text-indigo-200 border border-indigo-700' 
                         : isReadOnly
                         ? 'bg-slate-700 text-slate-300 border border-slate-600'
                         : 'bg-blue-900 text-blue-200 border border-blue-700'
                     }`}>
-                      {user.role}
+                      {user.assignedShip ? `🚢 ${user.assignedShip}` : user.role}
                     </span>
                   </div>
-                  <p className="text-[10px] text-slate-400">{user.email}</p>
+                  <p className="text-[10px] text-slate-300/80 font-mono">{user.email}</p>
                 </div>
 
                 <button

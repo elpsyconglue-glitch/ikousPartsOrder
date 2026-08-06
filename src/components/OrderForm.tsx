@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { PartHistory, OrderItem, OrderHeader, STAFF_LIST, StaffName, OrderCategory, ORDER_CATEGORY_TITLE_MAP } from '../types';
 import { DEFAULT_SHIP_NAMES } from '../defaultData';
-import { Plus, Trash2, Settings, HelpCircle, ChevronDown, ChevronUp, RefreshCw, FileText, Lock, AlertCircle } from 'lucide-react';
+import { Plus, Trash2, Settings, HelpCircle, ChevronDown, ChevronUp, RefreshCw, FileText, Lock, AlertCircle, Ship } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
 
 import { generateOrderNo as createAutoOrderNo } from '../utils/orderNoHelper';
@@ -25,10 +25,25 @@ export default function OrderForm({
   onPreviewClick,
   shipNames = DEFAULT_SHIP_NAMES
 }: OrderFormProps) {
-  const { isReadOnly, canPrint, isGuest } = useAuth();
+  const { isReadOnly, canPrint, isGuest, user } = useAuth();
+  const assignedShip = user?.assignedShip;
   const [activeRowDetails, setActiveRowDetails] = useState<string | null>(null);
   const [partNameSuggestions, setPartNameSuggestions] = useState<string[]>([]);
   const [focusedRowId, setFocusedRowId] = useState<string | null>(null);
+
+  // 船員ログイン時、明細行の船名を自動固定セット
+  useEffect(() => {
+    if (assignedShip) {
+      const needsUpdate = items.some(item => !item.shipName || item.shipName !== assignedShip);
+      if (needsUpdate) {
+        const updated = items.map(item => ({
+          ...item,
+          shipName: assignedShip
+        }));
+        onItemsChange(updated);
+      }
+    }
+  }, [assignedShip]);
 
   // 納品期限・納品場所の自動学習・履歴管理
   const [limitDateHistory, setLimitDateHistory] = useState<string[]>(() => {
@@ -99,7 +114,7 @@ export default function OrderForm({
       remark: '',
       isUrgent: false,
       orderCategory: '部品',
-      shipName: '',
+      shipName: assignedShip || '',
       equipmentName: '',
       manufacturer: '',
       model: ''
@@ -643,103 +658,90 @@ export default function OrderForm({
                   />
                 </div>
 
-                {/* 詳細設定トグルボタン */}
-                <button
-                  type="button"
-                  onClick={() => setActiveRowDetails(activeRowDetails === item.id ? null : item.id)}
-                  className="w-full text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 py-2 rounded-lg flex items-center justify-center gap-1 transition-colors"
-                >
-                  <span>{activeRowDetails === item.id ? '詳細情報 (注文分類・船名・メーカー・機器名・型式) をたたむ' : '詳細情報 (注文分類・船名・メーカー・機器名・型式) を設定・確認'}</span>
-                  {activeRowDetails === item.id ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                </button>
-
-                {/* 詳細アコーディオン */}
-                {activeRowDetails === item.id && (
-                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-3 text-xs animate-fadeIn">
-                    {/* 1. 注文の分類 */}
-                    <div>
-                      <label className="block font-bold text-slate-700 mb-1">注文の分類</label>
-                      <select
-                        className="w-full rounded border-slate-300 p-2 text-xs bg-white font-semibold text-indigo-900"
-                        value={item.orderCategory || '部品'}
-                        onChange={e => handleCellChange(item.id, 'orderCategory', e.target.value as OrderCategory)}
-                      >
-                        <option value="船用品">船用品 (船用品注文書)</option>
-                        <option value="部品">部品 (部品注文書)</option>
-                        <option value="潤滑油">潤滑油 (潤滑油注文書)</option>
-                        <option value="廃油処理">廃油処理 (廃油陸揚依頼書)</option>
-                      </select>
-                    </div>
-
-                    {/* 2. 船名 */}
-                    <div>
-                      <label className="block font-bold text-slate-600 mb-1">船名</label>
-                      <select
-                        className="w-full rounded border-slate-300 p-2 text-xs bg-white font-medium"
-                        value={shipNames.includes(item.shipName) ? item.shipName : (item.shipName ? 'OTHER' : '')}
-                        onChange={e => {
-                          const val = e.target.value;
-                          if (val === 'OTHER') {
-                            if (shipNames.includes(item.shipName)) handleCellChange(item.id, 'shipName', '');
-                          } else {
-                            handleCellChange(item.id, 'shipName', val);
-                          }
-                        }}
-                      >
-                        <option value="">-- 船名を選択 --</option>
-                        {shipNames.map(name => (
-                          <option key={name} value={name}>{name}</option>
-                        ))}
-                        <option value="OTHER">その他（直接手入力）</option>
-                      </select>
-                      {(!shipNames.includes(item.shipName) || item.shipName === '') && (
-                        <input
-                          type="text"
-                          placeholder="船名を直接入力..."
-                          className="w-full rounded border-indigo-300 p-2 text-xs bg-white mt-1"
-                          value={item.shipName}
-                          onChange={e => handleCellChange(item.id, 'shipName', e.target.value)}
-                        />
-                      )}
-                    </div>
-
-                    {/* 3. メーカー (発注先) */}
-                    <div>
-                      <label className="block font-bold text-slate-600 mb-1">メーカー (発注先)</label>
-                      <input
-                        type="text"
-                        placeholder="例: ヤンマー"
-                        className="w-full rounded border-slate-300 p-2 text-xs bg-white font-semibold"
-                        value={item.manufacturer}
-                        onChange={e => handleCellChange(item.id, 'manufacturer', e.target.value)}
-                      />
-                    </div>
-
-                    {/* 4. 機器名 */}
-                    <div>
-                      <label className="block font-bold text-slate-600 mb-1">機器名</label>
-                      <input
-                        type="text"
-                        placeholder="例: 主機関"
-                        className="w-full rounded border-slate-300 p-2 text-xs bg-white"
-                        value={item.equipmentName}
-                        onChange={e => handleCellChange(item.id, 'equipmentName', e.target.value)}
-                      />
-                    </div>
-
-                    {/* 5. 型式 */}
-                    <div>
-                      <label className="block font-bold text-slate-600 mb-1">型式</label>
-                      <input
-                        type="text"
-                        placeholder="例: 6EY26W"
-                        className="w-full rounded border-slate-300 p-2 text-xs bg-white"
-                        value={item.model}
-                        onChange={e => handleCellChange(item.id, 'model', e.target.value)}
-                      />
-                    </div>
+                {/* 詳細情報 (常時表示) */}
+                <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-3 text-xs">
+                  <div className="text-[11px] font-bold text-indigo-900 border-b border-slate-200 pb-1 flex items-center justify-between">
+                    <span>📋 機器名・型式・メーカー・船名</span>
+                    <span className="text-[10px] text-slate-500 font-normal">常時入力</span>
                   </div>
-                )}
+
+                  {/* 1. 機器名 */}
+                  <div>
+                    <label className="block font-bold text-slate-600 mb-1">機器名</label>
+                    <input
+                      type="text"
+                      placeholder="例: 主機関"
+                      className="w-full rounded border-slate-300 p-2 text-xs bg-white"
+                      value={item.equipmentName}
+                      onChange={e => handleCellChange(item.id, 'equipmentName', e.target.value)}
+                    />
+                  </div>
+
+                  {/* 2. 型式 */}
+                  <div>
+                    <label className="block font-bold text-slate-600 mb-1">型式</label>
+                    <input
+                      type="text"
+                      placeholder="例: 6EY26W"
+                      className="w-full rounded border-slate-300 p-2 text-xs bg-white"
+                      value={item.model}
+                      onChange={e => handleCellChange(item.id, 'model', e.target.value)}
+                    />
+                  </div>
+
+                  {/* 3. メーカー (発注先) */}
+                  <div>
+                    <label className="block font-bold text-slate-600 mb-1">メーカー (発注先)</label>
+                    <input
+                      type="text"
+                      placeholder="例: ヤンマー"
+                      className="w-full rounded border-slate-300 p-2 text-xs bg-white font-semibold"
+                      value={item.manufacturer}
+                      onChange={e => handleCellChange(item.id, 'manufacturer', e.target.value)}
+                    />
+                  </div>
+
+                  {/* 4. 船名 */}
+                  <div>
+                    <label className="block font-bold text-slate-600 mb-1">船名</label>
+                    {assignedShip ? (
+                      <div className="px-3 py-2 bg-emerald-50 border border-emerald-300 rounded text-xs font-bold text-emerald-950 flex items-center gap-1.5">
+                        <Ship className="h-4 w-4 text-emerald-700 shrink-0" />
+                        <span>🚢 【{assignedShip}】 (所属船固定)</span>
+                      </div>
+                    ) : (
+                      <>
+                        <select
+                          className="w-full rounded border-slate-300 p-2 text-xs bg-white font-medium"
+                          value={shipNames.includes(item.shipName) ? item.shipName : (item.shipName ? 'OTHER' : '')}
+                          onChange={e => {
+                            const val = e.target.value;
+                            if (val === 'OTHER') {
+                              if (shipNames.includes(item.shipName)) handleCellChange(item.id, 'shipName', '');
+                            } else {
+                              handleCellChange(item.id, 'shipName', val);
+                            }
+                          }}
+                        >
+                          <option value="">-- 船名を選択 --</option>
+                          {shipNames.map(name => (
+                            <option key={name} value={name}>{name}</option>
+                          ))}
+                          <option value="OTHER">その他（直接手入力）</option>
+                        </select>
+                        {(!shipNames.includes(item.shipName) || item.shipName === '') && (
+                          <input
+                            type="text"
+                            placeholder="船名を直接入力..."
+                            className="w-full rounded border-indigo-300 p-2 text-xs bg-white mt-1"
+                            value={item.shipName}
+                            onChange={e => handleCellChange(item.id, 'shipName', e.target.value)}
+                          />
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
               </div>
             );
           })}
@@ -769,26 +771,32 @@ export default function OrderForm({
                 <th scope="col" className="w-24 px-2 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">単価 (円)</th>
                 <th scope="col" className="w-24 px-2 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">金額 (円)</th>
                 <th scope="col" className="min-w-[85px] px-2 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">備考</th>
-                <th scope="col" className="w-20 px-2 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">詳細/削除</th>
+                <th scope="col" className="w-16 px-2 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">削除</th>
               </tr>
             </thead>
             
-            <tbody className="bg-white divide-y divide-slate-200">
+            <tbody className="bg-white divide-y-0">
               {items.map((item, index) => {
                 const partNoOptions = getPartNumberOptions(item.partName);
                 const showPartNoDropdown = partNoOptions.length > 1;
                 const lineAmount = (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0);
+                const isOdd = index % 2 === 1;
+                // 1項目（メイン＋サブ）全体で統一する背景色
+                const rowBgClass = focusedRowId === item.id 
+                  ? 'bg-indigo-50/40' 
+                  : (isOdd ? 'bg-slate-50/80' : 'bg-white');
 
                 return (
                   <React.Fragment key={item.id}>
-                    <tr className={`hover:bg-slate-50/50 transition-colors ${focusedRowId === item.id ? 'bg-indigo-50/20' : ''}`}>
+                    {/* メイン入力行 (1段目) */}
+                    <tr className={`${rowBgClass} transition-colors`}>
                       {/* 行番号 */}
-                      <td className="px-2 py-3.5 text-center font-medium text-slate-400 text-xs">
-                        {index + 1}
+                      <td className="px-2 py-2.5 text-center font-bold text-slate-600 text-xs font-mono border-t border-slate-200">
+                        No.{index + 1}
                       </td>
 
                       {/* 至急チェックボックス */}
-                      <td className="px-1 py-3.5 text-center">
+                      <td className="px-1 py-2.5 text-center border-t border-slate-200">
                         <input
                           type="checkbox"
                           className="h-4 w-4 rounded border-rose-300 text-rose-600 focus:ring-rose-500 cursor-pointer"
@@ -799,9 +807,9 @@ export default function OrderForm({
                       </td>
 
                       {/* 注文の分類 */}
-                      <td className="px-1.5 py-3.5">
+                      <td className="px-1.5 py-2.5 border-t border-slate-200">
                         <select
-                          className="block w-full rounded border-slate-300 px-1.5 py-1.5 text-xs font-semibold text-indigo-950 bg-indigo-50/30 shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                          className="block w-full rounded border-slate-300 px-1.5 py-1 text-xs font-semibold text-indigo-950 bg-white shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 cursor-pointer"
                           value={item.orderCategory || '部品'}
                           onChange={e => handleCellChange(item.id, 'orderCategory', e.target.value as OrderCategory)}
                         >
@@ -813,17 +821,16 @@ export default function OrderForm({
                       </td>
 
                       {/* 品名 (オートコンプリート) */}
-                      <td className="px-3 py-3.5">
+                      <td className="px-2.5 py-2.5 border-t border-slate-200">
                         <div className="relative">
                           <input
                             type="text"
                             required
                             placeholder="品名を入力してください..."
-                            className="block w-full rounded-md border-slate-300 px-2 py-1.5 text-sm text-slate-800 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 bg-white"
+                            className="block w-full rounded-md border-slate-300 px-2 py-1 text-sm text-slate-800 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 bg-white font-medium"
                             value={item.partName}
                             onChange={e => {
                               handleCellChange(item.id, 'partName', e.target.value);
-                              // リアルタイムに候補を検索して補完
                               handlePartNameSelect(item.id, e.target.value);
                             }}
                             onFocus={() => setFocusedRowId(item.id)}
@@ -838,14 +845,14 @@ export default function OrderForm({
                       </td>
 
                       {/* 部品番号・規格 */}
-                      <td className="px-3 py-3.5">
+                      <td className="px-2.5 py-2.5 border-t border-slate-200">
                         <div className="relative">
                           <input
                             type="text"
-                            placeholder={partNoOptions.length > 0 ? `規格候補${partNoOptions.length}件あり (選択/手入力)` : "自動入力または手入力..."}
-                            className={`block w-full rounded-md px-2 py-1.5 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500 ${
+                            placeholder={partNoOptions.length > 0 ? `規格候補${partNoOptions.length}件` : "自動入力または手入力..."}
+                            className={`block w-full rounded-md px-2 py-1 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500 ${
                               partNoOptions.length > 1
-                                ? 'border-indigo-400 bg-indigo-50/40 text-indigo-950 font-medium'
+                                ? 'border-indigo-400 bg-indigo-50/50 text-indigo-950 font-medium'
                                 : 'border-slate-300 text-slate-800 bg-white'
                             }`}
                             value={item.partNumber}
@@ -866,34 +873,29 @@ export default function OrderForm({
                               <option key={opt} value={opt} />
                             ))}
                           </datalist>
-                          {partNoOptions.length > 1 && !item.partNumber && (
-                            <span className="text-[10px] text-indigo-600 font-semibold mt-0.5 block">
-                              ⚠️ 候補 {partNoOptions.length}件 (選択または直接入力)
-                            </span>
-                          )}
                         </div>
                       </td>
 
                       {/* 数量 */}
-                      <td className="px-3 py-3.5">
+                      <td className="px-2 py-2.5 border-t border-slate-200">
                         <input
                           type="number"
                           required
                           min="1"
                           placeholder="数量"
-                          className="block w-full rounded-md border-slate-300 px-2 py-1.5 text-sm text-slate-800 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-right"
+                          className="block w-full rounded-md border-slate-300 px-2 py-1 text-sm text-slate-800 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-right bg-white"
                           value={item.quantity}
                           onChange={e => handleCellChange(item.id, 'quantity', e.target.value)}
                         />
                       </td>
 
                       {/* 単位 */}
-                      <td className="px-1.5 py-3.5">
+                      <td className="px-1.5 py-2.5 border-t border-slate-200">
                         <div className="relative">
                           <input
                             type="text"
                             placeholder="個,セット等"
-                            className="block w-full rounded-md border-slate-300 px-1.5 py-1.5 text-sm font-semibold text-center text-slate-800 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 bg-white"
+                            className="block w-full rounded-md border-slate-300 px-1 py-1 text-sm font-semibold text-center text-slate-800 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 bg-white"
                             value={item.unit}
                             onChange={e => handleCellChange(item.id, 'unit', e.target.value)}
                             list={`units-${item.id}`}
@@ -907,181 +909,162 @@ export default function OrderForm({
                       </td>
 
                       {/* 単価 */}
-                      <td className="px-3 py-3.5">
+                      <td className="px-2 py-2.5 border-t border-slate-200">
                         <input
                           type="number"
                           min="0"
                           placeholder="単価 (円)"
-                          className="block w-full rounded-md border-slate-300 px-2 py-1.5 text-sm text-slate-800 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-right"
+                          className="block w-full rounded-md border-slate-300 px-2 py-1 text-sm text-slate-800 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-right bg-white"
                           value={item.unitPrice}
                           onChange={e => handleCellChange(item.id, 'unitPrice', e.target.value)}
                         />
                       </td>
 
                       {/* 金額 */}
-                      <td className="px-3 py-3.5 text-right font-medium text-slate-700 bg-slate-50/30">
+                      <td className="px-2 py-2.5 text-right font-bold text-slate-800 bg-slate-100/40 border-t border-slate-200">
                         ¥{lineAmount.toLocaleString()}
                       </td>
 
                       {/* 備考 */}
-                      <td className="px-3 py-3.5">
+                      <td className="px-2 py-2.5 border-t border-slate-200">
                         <input
                           type="text"
                           placeholder="例: 予備用"
-                          className="block w-full rounded-md border-slate-300 px-2 py-1.5 text-sm text-slate-800 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                          className="block w-full rounded-md border-slate-300 px-2 py-1 text-sm text-slate-800 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 bg-white"
                           value={item.remark}
                           onChange={e => handleCellChange(item.id, 'remark', e.target.value)}
                         />
                       </td>
 
-                      {/* アクション (詳細 / 削除) */}
-                      <td className="px-3 py-3.5">
-                        <div className="flex items-center justify-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => setActiveRowDetails(activeRowDetails === item.id ? null : item.id)}
-                            className={`p-1.5 rounded hover:bg-slate-100 transition-colors ${activeRowDetails === item.id ? 'text-indigo-600 bg-indigo-50' : 'text-slate-400'}`}
-                            title="船名、メーカーなどの自動補完詳細を開く"
-                          >
-                            {activeRowDetails === item.id ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveRow(item.id)}
-                            className="p-1.5 rounded hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition-colors"
-                            title="この行を削除"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
+                      {/* 行削除ボタン */}
+                      <td className="px-2 py-2.5 text-center border-t border-slate-200">
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveRow(item.id)}
+                          className="p-1.5 rounded hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+                          title="この明細行を削除"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
                       </td>
                     </tr>
 
-                    {/* 詳細トグル行 (船名、機器名、メーカー、形式) */}
-                    {activeRowDetails === item.id && (
-                      <tr className="bg-slate-50/50">
-                        <td colSpan={11} className="px-6 py-4 border-l-2 border-l-indigo-500">
-                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
-                            {/* 注文の分類 */}
-                            <div>
-                              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                                注文の分類
-                              </label>
-                              <select
-                                className="block w-full rounded border-slate-300 px-2.5 py-1.5 text-xs text-slate-800 bg-white font-semibold shadow-sm focus:ring-1 focus:ring-indigo-500 cursor-pointer"
-                                value={item.orderCategory || '部品'}
-                                onChange={e => handleCellChange(item.id, 'orderCategory', e.target.value as OrderCategory)}
-                              >
-                                <option value="船用品">船用品 (船用品注文書)</option>
-                                <option value="部品">部品 (部品注文書)</option>
-                                <option value="潤滑油">潤滑油 (潤滑油注文書)</option>
-                                <option value="廃油処理">廃油処理 (廃油陸揚依頼書)</option>
-                              </select>
-                            </div>
+                    {/* 2段目サブ入力行 (機器名・型式・メーカー・船名) - メイン行と一体化 */}
+                    <tr className={`${rowBgClass} border-b-2 border-slate-300 transition-colors`}>
+                      <td className="px-2 py-2 text-center text-slate-300 font-mono text-xs select-none">
+                      </td>
+                      <td colSpan={10} className="px-3 pb-3 pt-0.5">
+                        <div className="bg-slate-100/70 p-2.5 rounded-lg border border-slate-200 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                          {/* 1. 機器名 */}
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                              機器名
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="例: 主機関"
+                              className="block w-full rounded border-slate-300 px-2.5 py-1 text-xs text-slate-800 bg-white shadow-sm focus:ring-1 focus:ring-indigo-500"
+                              value={item.equipmentName}
+                              onChange={e => handleCellChange(item.id, 'equipmentName', e.target.value)}
+                              list={`equipment-names-${item.id}`}
+                            />
+                            <datalist id={`equipment-names-${item.id}`}>
+                              {uniqueEquipmentNames.map(name => (
+                                <option key={name} value={name} />
+                              ))}
+                            </datalist>
+                          </div>
 
-                            {/* 船名 */}
+                          {/* 2. 型式 */}
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                              型式
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="例: 6EY26W"
+                              className="block w-full rounded border-slate-300 px-2.5 py-1 text-xs text-slate-800 bg-white shadow-sm focus:ring-1 focus:ring-indigo-500"
+                              value={item.model}
+                              onChange={e => handleCellChange(item.id, 'model', e.target.value)}
+                              list={`model-names-${item.id}`}
+                            />
+                            <datalist id={`model-names-${item.id}`}>
+                              {uniqueModelNames.map(name => (
+                                <option key={name} value={name} />
+                              ))}
+                            </datalist>
+                          </div>
+
+                          {/* 3. メーカー (発注先) */}
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                              メーカー (発注先)
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="例: ヤンマー"
+                              className="block w-full rounded border-slate-300 px-2.5 py-1 text-xs text-slate-800 bg-white shadow-sm focus:ring-1 focus:ring-indigo-500 font-medium"
+                              value={item.manufacturer}
+                              onChange={e => handleCellChange(item.id, 'manufacturer', e.target.value)}
+                              list={`manufacturer-names-${item.id}`}
+                            />
+                            <datalist id={`manufacturer-names-${item.id}`}>
+                              {uniqueManufacturerNames.map(name => (
+                                <option key={name} value={name} />
+                              ))}
+                            </datalist>
+                          </div>
+
+                          {/* 4. 船名 */}
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                              船名 {assignedShip ? <span className="text-emerald-700 font-bold">(所属船固定)</span> : <span className="text-indigo-600 font-normal">(選択/手入力)</span>}
+                            </label>
                             <div>
-                              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                                船名 <span className="text-indigo-600 font-semibold">(ドロップダウン選択)</span>
-                              </label>
-                              <div className="space-y-1">
-                                <select
-                                  className="block w-full rounded border-slate-300 px-2.5 py-1.5 text-xs text-slate-800 bg-white font-medium shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 cursor-pointer"
-                                  value={shipNames.includes(item.shipName) ? item.shipName : (item.shipName ? 'OTHER' : '')}
-                                  onChange={e => {
-                                    const val = e.target.value;
-                                    if (val === 'OTHER') {
-                                      if (shipNames.includes(item.shipName)) {
-                                        handleCellChange(item.id, 'shipName', '');
+                              {assignedShip ? (
+                                <div className="px-2.5 py-1 bg-emerald-50 border border-emerald-300 rounded text-xs font-bold text-emerald-950 flex items-center gap-1.5">
+                                  <Ship className="h-3.5 w-3.5 text-emerald-700 shrink-0" />
+                                  <span>🚢 【{assignedShip}】</span>
+                                </div>
+                              ) : (
+                                <>
+                                  <select
+                                    className="block w-full rounded border-slate-300 px-2.5 py-1 text-xs text-slate-800 bg-white font-medium shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                                    value={shipNames.includes(item.shipName) ? item.shipName : (item.shipName ? 'OTHER' : '')}
+                                    onChange={e => {
+                                      const val = e.target.value;
+                                      if (val === 'OTHER') {
+                                        if (shipNames.includes(item.shipName)) {
+                                          handleCellChange(item.id, 'shipName', '');
+                                        }
+                                      } else {
+                                        handleCellChange(item.id, 'shipName', val);
                                       }
-                                    } else {
-                                      handleCellChange(item.id, 'shipName', val);
-                                    }
-                                  }}
-                                >
-                                  <option value="">-- 船名を選択してください --</option>
-                                  {shipNames.map(name => (
-                                    <option key={name} value={name}>{name}</option>
-                                  ))}
-                                  <option value="OTHER">✏️ その他（直接手入力する）</option>
-                                </select>
+                                    }}
+                                  >
+                                    <option value="">-- 船名を選択 --</option>
+                                    {shipNames.map(name => (
+                                      <option key={name} value={name}>{name}</option>
+                                    ))}
+                                    <option value="OTHER">✏️ その他（直接手入力）</option>
+                                  </select>
 
-                                {(!shipNames.includes(item.shipName) || item.shipName === '') && (
-                                  <input
-                                    type="text"
-                                    placeholder="船名を直接入力..."
-                                    className="block w-full rounded border-indigo-300 px-2.5 py-1.5 text-xs text-slate-800 bg-indigo-50/20 shadow-sm focus:ring-1 focus:ring-indigo-500 mt-1"
-                                    value={item.shipName}
-                                    onChange={e => handleCellChange(item.id, 'shipName', e.target.value)}
-                                  />
-                                )}
-                              </div>
-                            </div>
-
-                            {/* メーカー (発注先) */}
-                            <div>
-                              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                                メーカー (発注先) <span className="text-indigo-600 font-normal">(候補選択または手入力)</span>
-                              </label>
-                              <input
-                                type="text"
-                                placeholder="候補から選択または手入力..."
-                                className="block w-full rounded border-slate-300 px-2.5 py-1.5 text-xs text-slate-800 bg-white shadow-sm focus:ring-1 focus:ring-indigo-500 font-medium"
-                                value={item.manufacturer}
-                                onChange={e => handleCellChange(item.id, 'manufacturer', e.target.value)}
-                                list={`manufacturer-names-${item.id}`}
-                              />
-                              <datalist id={`manufacturer-names-${item.id}`}>
-                                {uniqueManufacturerNames.map(name => (
-                                  <option key={name} value={name} />
-                                ))}
-                              </datalist>
-                              <p className="text-[10px] text-slate-400 mt-0.5">※メーカーが異なる場合、発注書が個別に分かれます。</p>
-                            </div>
-
-                            {/* 機器名 */}
-                            <div>
-                              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                                機器名 <span className="text-indigo-600 font-normal">(候補選択または手入力)</span>
-                              </label>
-                              <input
-                                type="text"
-                                placeholder="候補から選択または手入力..."
-                                className="block w-full rounded border-slate-300 px-2.5 py-1.5 text-xs text-slate-800 bg-white shadow-sm focus:ring-1 focus:ring-indigo-500"
-                                value={item.equipmentName}
-                                onChange={e => handleCellChange(item.id, 'equipmentName', e.target.value)}
-                                list={`equipment-names-${item.id}`}
-                              />
-                              <datalist id={`equipment-names-${item.id}`}>
-                                {uniqueEquipmentNames.map(name => (
-                                  <option key={name} value={name} />
-                                ))}
-                              </datalist>
-                            </div>
-
-                            {/* 型式 */}
-                            <div>
-                              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                                型式 <span className="text-indigo-600 font-normal">(候補選択または手入力)</span>
-                              </label>
-                              <input
-                                type="text"
-                                placeholder="候補から選択または手入力..."
-                                className="block w-full rounded border-slate-300 px-2.5 py-1.5 text-xs text-slate-800 bg-white shadow-sm focus:ring-1 focus:ring-indigo-500"
-                                value={item.model}
-                                onChange={e => handleCellChange(item.id, 'model', e.target.value)}
-                                list={`model-names-${item.id}`}
-                              />
-                              <datalist id={`model-names-${item.id}`}>
-                                {uniqueModelNames.map(name => (
-                                  <option key={name} value={name} />
-                                ))}
-                              </datalist>
+                                  {(!shipNames.includes(item.shipName) || item.shipName === '') && (
+                                    <input
+                                      type="text"
+                                      placeholder="船名を直接入力..."
+                                      className="block w-full rounded border-indigo-300 px-2.5 py-1 text-xs text-slate-800 bg-indigo-50/20 shadow-sm focus:ring-1 focus:ring-indigo-500 mt-1"
+                                      value={item.shipName}
+                                      onChange={e => handleCellChange(item.id, 'shipName', e.target.value)}
+                                    />
+                                  )}
+                                </>
+                              )}
                             </div>
                           </div>
-                        </td>
-                      </tr>
-                    )}
+                        </div>
+                      </td>
+                    </tr>
                   </React.Fragment>
                 );
               })}
