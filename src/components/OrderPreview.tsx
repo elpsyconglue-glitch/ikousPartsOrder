@@ -27,6 +27,8 @@ export default function OrderPreview({ header, items, histories, onHistoriesChan
   const { canPrint } = useAuth();
   // 金額・単価を表示するかどうかの状態（デフォルトは true）
   const [showPrice, setShowPrice] = React.useState<boolean>(true);
+  // 特定の1枚のみを印刷対象にするキー
+  const [singlePrintKey, setSinglePrintKey] = React.useState<string | null>(null);
 
   // コンポーネントマウント時の histories スナップショットを保持し、無限ループを防止
   const initialHistoriesRef = useRef(histories);
@@ -121,7 +123,7 @@ export default function OrderPreview({ header, items, histories, onHistoriesChan
     }
   };
 
-  // 金額ありで印刷・PDF出力
+  // 全枚まとめて印刷・PDF出力（金額あり）
   const handlePrintWithPrice = () => {
     if (!canPrint) {
       alert('ゲストアカウントは閲覧専用のため、発注書の印刷・PDF保存はできません。');
@@ -129,12 +131,13 @@ export default function OrderPreview({ header, items, histories, onHistoriesChan
     }
     saveToHistories();
     setShowPrice(true);
+    setSinglePrintKey(null);
     setTimeout(() => {
       window.print();
     }, 50);
   };
 
-  // 金額なし（空欄）で印刷・PDF出力
+  // 全枚まとめて印刷・PDF出力（金額なし）
   const handlePrintWithoutPrice = () => {
     if (!canPrint) {
       alert('ゲストアカウントは閲覧専用のため、発注書の印刷・PDF保存はできません。');
@@ -142,8 +145,24 @@ export default function OrderPreview({ header, items, histories, onHistoriesChan
     }
     saveToHistories();
     setShowPrice(false);
+    setSinglePrintKey(null);
     setTimeout(() => {
       window.print();
+    }, 50);
+  };
+
+  // 指定された特定の発注書1枚のみを印刷・PDF出力
+  const handlePrintSingle = (groupKey: string, withPrice: boolean) => {
+    if (!canPrint) {
+      alert('ゲストアカウントは閲覧専用のため、発注書の印刷・PDF保存はできません。');
+      return;
+    }
+    saveToHistories();
+    setShowPrice(withPrice);
+    setSinglePrintKey(groupKey);
+    setTimeout(() => {
+      window.print();
+      setSinglePrintKey(null);
     }, 50);
   };
 
@@ -244,15 +263,61 @@ export default function OrderPreview({ header, items, histories, onHistoriesChan
           const emptyRowsCount = Math.max(0, TOTAL_ROWS - mfgItems.length);
           const emptyRows = Array.from({ length: emptyRowsCount });
 
+          const isHiddenInPrint = singlePrintKey !== null && singlePrintKey !== group.key;
+
           return (
             <div 
               key={group.key} 
-              className="bg-white rounded-xl border border-slate-300 shadow-md p-6 max-w-[840px] mx-auto relative overflow-hidden print:shadow-none print:border-none print:p-0 print:m-0 print:rounded-none print:max-w-none print:bg-transparent page-break order-sheet-page"
+              className={`bg-white rounded-xl border border-slate-300 shadow-md p-6 max-w-[840px] mx-auto relative overflow-hidden print:shadow-none print:border-none print:p-0 print:m-0 print:rounded-none print:max-w-none print:bg-transparent page-break order-sheet-page ${
+                isHiddenInPrint ? 'print:hidden' : ''
+              }`}
               style={{ 
-                pageBreakAfter: groupIndex < orderGroups.length - 1 ? 'always' : 'avoid',
-                breakAfter: groupIndex < orderGroups.length - 1 ? 'page' : 'avoid'
+                pageBreakAfter: (groupIndex < orderGroups.length - 1 && singlePrintKey === null) ? 'always' : 'avoid',
+                breakAfter: (groupIndex < orderGroups.length - 1 && singlePrintKey === null) ? 'page' : 'avoid'
               }}
             >
+              {/* 各発注書ごとの個別印刷・PDF出力ヘッダーバー（画面表示時のみ） */}
+              <div className="mb-4 pb-3 border-b border-slate-200 flex items-center justify-between flex-wrap gap-2.5 print:hidden bg-slate-50 -mx-6 -mt-6 p-4 rounded-t-xl">
+                <div className="flex items-center gap-2">
+                  <span className="bg-indigo-600 text-white text-xs font-bold px-2.5 py-1 rounded-full shrink-0">
+                    {groupIndex + 1} / {orderGroups.length}枚目
+                  </span>
+                  <span className="text-xs font-bold text-slate-800">
+                    【{mfg} - {ORDER_CATEGORY_TITLE_MAP[category] || '部品注文書'}】
+                  </span>
+                </div>
+
+                <div className="flex items-center flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handlePrintSingle(group.key, true)}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-md border shadow-sm transition-all cursor-pointer ${
+                      !canPrint
+                        ? 'bg-slate-200 text-slate-500 cursor-not-allowed border-slate-300'
+                        : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border-indigo-200'
+                    }`}
+                    title="この発注書1枚のみを金額ありで印刷/PDF保存"
+                  >
+                    {canPrint ? <Printer className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5 text-amber-600" />}
+                    <span>この1枚のみ印刷 (金額あり)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handlePrintSingle(group.key, false)}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-md border shadow-sm transition-all cursor-pointer ${
+                      !canPrint
+                        ? 'bg-slate-200 text-slate-500 cursor-not-allowed border-slate-300'
+                        : 'bg-white text-slate-700 hover:bg-slate-100 border-slate-300'
+                    }`}
+                    title="この発注書1枚のみを金額空欄で印刷/PDF保存"
+                  >
+                    {canPrint ? <Printer className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5 text-amber-600" />}
+                    <span>この1枚のみ印刷 (金額なし)</span>
+                  </button>
+                </div>
+              </div>
+
               {/* PDF再現部 */}
               <div className="text-slate-900 font-sans leading-snug" style={{ fontSize: '12px' }}>
                 
