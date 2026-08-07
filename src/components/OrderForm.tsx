@@ -12,6 +12,12 @@ import {
   getVesselHistories, 
   saveVesselHistories 
 } from '../utils/vesselStorage';
+import { 
+  findModelByShipAndEquipment, 
+  getEquipmentNamesForShip, 
+  getModelSuggestions, 
+  VESSEL_EQUIPMENT_MASTER 
+} from '../utils/vesselEquipmentMaster';
 
 interface OrderFormProps {
   histories: PartHistory[];
@@ -115,9 +121,15 @@ export default function OrderForm({
   };
 
   const uniqueShipNames = DEFAULT_SHIP_NAMES;
-  const uniqueEquipmentNames = Array.from(new Set(sourceHistories.map(h => h.equipmentName).filter(Boolean))) as string[];
+  const uniqueEquipmentNames = Array.from(new Set([
+    ...VESSEL_EQUIPMENT_MASTER.map(r => r.equipmentName),
+    ...sourceHistories.map(h => h.equipmentName).filter(Boolean)
+  ])) as string[];
   const uniqueManufacturerNames = Array.from(new Set(sourceHistories.map(h => h.manufacturer).filter(Boolean))) as string[];
-  const uniqueModelNames = Array.from(new Set(sourceHistories.map(h => h.model).filter(Boolean))) as string[];
+  const uniqueModelNames = Array.from(new Set([
+    ...VESSEL_EQUIPMENT_MASTER.map(r => r.model),
+    ...sourceHistories.map(h => h.model).filter(Boolean)
+  ])) as string[];
   const uniqueUnits = Array.from(new Set(sourceHistories.map(h => h.unit).filter(Boolean))) as string[];
   const allPartNumbers = Array.from(new Set(sourceHistories.map(h => h.partNumber).filter(Boolean))) as string[];
 
@@ -130,6 +142,10 @@ export default function OrderForm({
   // 新規行を1行追加（直前行の機器名・メーカー・型式・船名・分類を自動コピー引き継ぎ）
   const handleAddRow = () => {
     const lastItem = items.length > 0 ? items[items.length - 1] : null;
+    const currentShip = lastItem?.shipName || header.shipName || currentShipName || assignedShip || '';
+    const currentEquipment = lastItem?.equipmentName || '';
+    const autoModel = currentEquipment ? (findModelByShipAndEquipment(currentShip, currentEquipment) || lastItem?.model || '') : (lastItem?.model || '');
+
     const newItem: OrderItem = {
       id: `item-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       partName: '',
@@ -140,10 +156,10 @@ export default function OrderForm({
       remark: '',
       isUrgent: false,
       orderCategory: lastItem?.orderCategory || '部品',
-      shipName: lastItem?.shipName || assignedShip || '',
-      equipmentName: lastItem?.equipmentName || '',
+      shipName: currentShip,
+      equipmentName: currentEquipment,
       manufacturer: lastItem?.manufacturer || '',
-      model: lastItem?.model || ''
+      model: autoModel
     };
     onItemsChange([...items, newItem]);
   };
@@ -177,13 +193,17 @@ export default function OrderForm({
     }
   };
 
-  // 船名の変更：ヘッダーおよび全アイテムの船名を一括更新
+  // 船名の変更：ヘッダーおよび全アイテムの船名を一括更新＆機器名に応じた型式の一括自動連動
   const handleShipNameChange = (newShipName: string) => {
     onHeaderChange({ ...header, shipName: newShipName });
-    const updated = items.map(item => ({
-      ...item,
-      shipName: newShipName
-    }));
+    const updated = items.map(item => {
+      const matchedModel = findModelByShipAndEquipment(newShipName, item.equipmentName);
+      return {
+        ...item,
+        shipName: newShipName,
+        model: matchedModel || item.model
+      };
+    });
     onItemsChange(updated);
   };
   const sanitizeValue = (val: string | undefined | null): string => {
@@ -221,10 +241,14 @@ export default function OrderForm({
   const handleCellChange = (id: string, field: keyof OrderItem, value: any) => {
     // 船名の変更の場合：一回の注文で船名は統一されるため、全行の船名を一括更新
     if (field === 'shipName') {
-      const updated = items.map(item => ({
-        ...item,
-        shipName: value
-      }));
+      const updated = items.map(item => {
+        const matchedModel = findModelByShipAndEquipment(value, item.equipmentName);
+        return {
+          ...item,
+          shipName: value,
+          model: matchedModel || item.model
+        };
+      });
       onItemsChange(updated);
       return;
     }
@@ -239,6 +263,15 @@ export default function OrderForm({
         }
         if (field === 'unitPrice') {
           updatedItem.unitPrice = value === '' ? '' : Number(value);
+        }
+
+        // 機器名(equipmentName)変更時: 船名と機器名から型式(model)を自動検索してセット
+        if (field === 'equipmentName') {
+          const currentShip = item.shipName || header.shipName || currentShipName || assignedShip || '';
+          const matchedModel = findModelByShipAndEquipment(currentShip, value);
+          if (matchedModel) {
+            updatedItem.model = matchedModel;
+          }
         }
 
         return updatedItem;
