@@ -67,15 +67,8 @@ export default function OrderForm({
     }
   }, [assignedShip]);
 
-  // 船員モード（船ログイン時または船名指定時）は船専用DBのみ、陸上モードは共通発注履歴DBを使用
-  const sourceHistories = useMemo(() => {
-    if (isVesselMode && currentShipName) {
-      // 船員モード: 船独自の蓄積DBのみを使用（陸側の7000件DBは非適用）
-      return getVesselHistories(currentShipName);
-    }
-    // 陸上モード: 全体発注履歴DBを使用
-    return histories;
-  }, [isVesselMode, currentShipName, histories]);
+  // 発注履歴DBとサジェスト用参照元を常に統一
+  const sourceHistories = histories;
 
   // 納品期限・納品場所の自動学習・履歴管理
   const [limitDateHistory, setLimitDateHistory] = useState<string[]>(() => {
@@ -388,16 +381,6 @@ export default function OrderForm({
       alert('ゲストアカウントは閲覧専用のため、発注書の印刷・PDFプレビュー出力はできません。');
       return;
     }
-    if (header.limitDate) saveLimitDateToHistory(header.limitDate);
-    if (header.place) savePlaceToHistory(header.place);
-
-    // 船用ローカルデータベースへの入力情報の自動蓄積
-    if (currentShipName) {
-      if (header.captain) saveVesselCaptain(currentShipName, header.captain);
-      if (header.chiefEngineer) saveVesselChiefEngineer(currentShipName, header.chiefEngineer);
-      saveVesselHistories(currentShipName, items, header.date);
-    }
-
     onPreviewClick();
   };
 

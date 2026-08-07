@@ -3,6 +3,7 @@ import { OrderItem, OrderHeader, OrderCategory, PartHistory, ORDER_CATEGORY_TITL
 import { Printer, ChevronLeft, Download, AlertCircle, Lock } from 'lucide-react';
 import { generateOrderNo } from '../utils/orderNoHelper';
 import { registerNewItemsToHistories, getPartHistories } from '../utils/csvHelper';
+import { saveVesselCaptain, saveVesselChiefEngineer, saveVesselHistories } from '../utils/vesselStorage';
 import { useAuth } from '../auth/AuthContext';
 
 interface OrderPreviewProps {
@@ -109,6 +110,14 @@ export default function OrderPreview({ header, items, histories, onHistoriesChan
       const currentHistories = getPartHistories();
       const updated = registerNewItemsToHistories(currentHistories, itemsWithGroupOrderNo, header.date);
       onHistoriesChange(updated);
+
+      // 印刷実行（確定）のタイミングでのみ船専用ローカルDBにも正式登録
+      const currentShip = items.find(i => i.shipName)?.shipName || header.shipName;
+      if (currentShip) {
+        if (header.captain) saveVesselCaptain(currentShip, header.captain);
+        if (header.chiefEngineer) saveVesselChiefEngineer(currentShip, header.chiefEngineer);
+        saveVesselHistories(currentShip, itemsWithGroupOrderNo, header.date);
+      }
     }
   };
 
