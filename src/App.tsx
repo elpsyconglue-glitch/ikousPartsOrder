@@ -224,18 +224,21 @@ function AppContent() {
                 船別・予算発注履歴
               </button>
 
-              <button
-                onClick={() => { setActiveTab('db'); setViewMode('edit'); }}
-                type="button"
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                  activeTab === 'db'
-                    ? 'bg-indigo-600 text-white shadow-sm'
-                    : 'text-slate-300 hover:text-white hover:bg-slate-700/50'
-                }`}
-              >
-                <Database className="h-4 w-4" />
-                履歴DB/CSV管理 ({histories.length})
-              </button>
+              {/* 船員ユーザー以外の場合のみ「履歴DB/CSV管理」タブを表示 */}
+              {!(isVesselUser || user?.assignedShip) && (
+                <button
+                  onClick={() => { setActiveTab('db'); setViewMode('edit'); }}
+                  type="button"
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    activeTab === 'db'
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'text-slate-300 hover:text-white hover:bg-slate-700/50'
+                  }`}
+                >
+                  <Database className="h-4 w-4" />
+                  履歴DB/CSV管理 ({histories.length})
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -298,7 +301,7 @@ function AppContent() {
               />
             )}
 
-            {activeTab === 'db' && (
+            {activeTab === 'db' && !(isVesselUser || user?.assignedShip) && (
               <CsvManager
                 histories={histories}
                 onHistoriesChange={setHistories}

@@ -65,6 +65,8 @@ export interface OrderHeader {
   date: string;           // 発注年月日
   orderNo: string;        // 発注書No
   staff: string;          // 担当 (大野隆太, 伊坂博樹, 村上愛子, 三輪大真)
+  captain?: string;       // 船長 (船員モード用)
+  chiefEngineer?: string; // 機関長 (船員モード用)
   limitDate: string;      // 納品期限
   place: string;          // 納品場所
   orderCategory: OrderCategory; // 注文の分類 (船用品 | 部品 | 潤滑油 | 廃油処理)

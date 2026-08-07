@@ -1,10 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { PartHistory, OrderItem, OrderHeader, STAFF_LIST, StaffName, OrderCategory, ORDER_CATEGORY_TITLE_MAP } from '../types';
 import { DEFAULT_SHIP_NAMES } from '../defaultData';
 import { Plus, Trash2, Settings, HelpCircle, ChevronDown, ChevronUp, RefreshCw, FileText, Lock, AlertCircle, Ship } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
 
 import { generateOrderNo as createAutoOrderNo } from '../utils/orderNoHelper';
+import { 
+  getVesselCaptains, 
+  saveVesselCaptain, 
+  getVesselChiefEngineers, 
+  saveVesselChiefEngineer, 
+  getVesselHistories, 
+  saveVesselHistories 
+} from '../utils/vesselStorage';
 
 interface OrderFormProps {
   histories: PartHistory[];
@@ -25,13 +33,28 @@ export default function OrderForm({
   onPreviewClick,
   shipNames = DEFAULT_SHIP_NAMES
 }: OrderFormProps) {
-  const { isReadOnly, canPrint, isGuest, user } = useAuth();
+  const { isReadOnly, canPrint, isGuest, isVesselUser, user } = useAuth();
   const assignedShip = user?.assignedShip;
+  const currentShipName = assignedShip || items.find(i => i.shipName)?.shipName || '';
+  const isVesselMode = isVesselUser || !!assignedShip;
+
   const [activeRowDetails, setActiveRowDetails] = useState<string | null>(null);
   const [partNameSuggestions, setPartNameSuggestions] = useState<string[]>([]);
   const [focusedRowId, setFocusedRowId] = useState<string | null>(null);
 
-  // 船員ログイン時、明細行の船名を自動固定セット
+  // 船員モード用の船長・機関長候補履歴
+  const [captainHistory, setCaptainHistory] = useState<string[]>([]);
+  const [chiefEngineerHistory, setChiefEngineerHistory] = useState<string[]>([]);
+
+  // 船名に対応する船専用ローカルデータを読み込み
+  useEffect(() => {
+    if (currentShipName) {
+      setCaptainHistory(getVesselCaptains(currentShipName));
+      setChiefEngineerHistory(getVesselChiefEngineers(currentShipName));
+    }
+  }, [currentShipName]);
+
+  // 船ログイン時、明細行の船名を自動固定セット
   useEffect(() => {
     if (assignedShip) {
       const needsUpdate = items.some(item => !item.shipName || item.shipName !== assignedShip);
@@ -44,6 +67,16 @@ export default function OrderForm({
       }
     }
   }, [assignedShip]);
+
+  // 船員モード（船ログイン時または船名指定時）は船専用DBのみ、陸上モードは共通発注履歴DBを使用
+  const sourceHistories = useMemo(() => {
+    if (isVesselMode && currentShipName) {
+      // 船員モード: 船独自の蓄積DBのみを使用（陸側の7000件DBは非適用）
+      return getVesselHistories(currentShipName);
+    }
+    // 陸上モード: 全体発注履歴DBを使用
+    return histories;
+  }, [isVesselMode, currentShipName, histories]);
 
   // 納品期限・納品場所の自動学習・履歴管理
   const [limitDateHistory, setLimitDateHistory] = useState<string[]>(() => {
@@ -90,20 +123,21 @@ export default function OrderForm({
   };
 
   const uniqueShipNames = DEFAULT_SHIP_NAMES;
-  const uniqueEquipmentNames = Array.from(new Set(histories.map(h => h.equipmentName).filter(Boolean)));
-  const uniqueManufacturerNames = Array.from(new Set(histories.map(h => h.manufacturer).filter(Boolean)));
-  const uniqueModelNames = Array.from(new Set(histories.map(h => h.model).filter(Boolean)));
-  const uniqueUnits = Array.from(new Set(histories.map(h => h.unit).filter(Boolean)));
-  const allPartNumbers = Array.from(new Set(histories.map(h => h.partNumber).filter(Boolean)));
+  const uniqueEquipmentNames = Array.from(new Set(sourceHistories.map(h => h.equipmentName).filter(Boolean))) as string[];
+  const uniqueManufacturerNames = Array.from(new Set(sourceHistories.map(h => h.manufacturer).filter(Boolean))) as string[];
+  const uniqueModelNames = Array.from(new Set(sourceHistories.map(h => h.model).filter(Boolean))) as string[];
+  const uniqueUnits = Array.from(new Set(sourceHistories.map(h => h.unit).filter(Boolean))) as string[];
+  const allPartNumbers = Array.from(new Set(sourceHistories.map(h => h.partNumber).filter(Boolean))) as string[];
 
   // 一意の品名リストをあらかじめ抽出してサジェストに利用
   useEffect(() => {
-    const names = Array.from(new Set(histories.map(h => h.partName)));
+    const names = Array.from(new Set(sourceHistories.map(h => h.partName)));
     setPartNameSuggestions(names);
-  }, [histories]);
+  }, [sourceHistories]);
 
-  // 新規行を1行追加
+  // 新規行を1行追加（直前行の機器名・メーカー・型式・船名・分類を自動コピー引き継ぎ）
   const handleAddRow = () => {
+    const lastItem = items.length > 0 ? items[items.length - 1] : null;
     const newItem: OrderItem = {
       id: `item-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       partName: '',
@@ -113,11 +147,11 @@ export default function OrderForm({
       unitPrice: '',
       remark: '',
       isUrgent: false,
-      orderCategory: '部品',
-      shipName: assignedShip || '',
-      equipmentName: '',
-      manufacturer: '',
-      model: ''
+      orderCategory: lastItem?.orderCategory || '部品',
+      shipName: lastItem?.shipName || assignedShip || '',
+      equipmentName: lastItem?.equipmentName || '',
+      manufacturer: lastItem?.manufacturer || '',
+      model: lastItem?.model || ''
     };
     onItemsChange([...items, newItem]);
   };
@@ -175,7 +209,7 @@ export default function OrderForm({
   // 品名が入力・選択された際の自動補完・分析ロジック
   const handlePartNameSelect = (id: string, partName: string) => {
     // データベースから品名が一致する履歴をすべて抽出
-    const matchingHistories = histories.filter(
+    const matchingHistories = sourceHistories.filter(
       h => h.partName.toLowerCase().trim() === partName.toLowerCase().trim()
     );
 
@@ -206,7 +240,6 @@ export default function OrderForm({
           };
         } else if (partNumbers.length > 1) {
           // 部品番号の候補が複数ある場合
-          // 最初のマッチの情報を暫定的に入れておき、部品番号を「選択してください」状態、または最初の候補にする
           const firstMatch = matchingHistories[0];
           return {
             ...baseItem,
@@ -236,7 +269,7 @@ export default function OrderForm({
     if (!currentItem) return;
 
     // 品名と部品番号が両方一致する履歴レコードを検索
-    const match = histories.find(
+    const match = sourceHistories.find(
       h => h.partName.toLowerCase().trim() === currentItem.partName.toLowerCase().trim() &&
            h.partNumber === partNumber
     );
@@ -267,7 +300,7 @@ export default function OrderForm({
   // 行に紐づく品名の部品番号候補リストを取得
   const getPartNumberOptions = (partName: string): string[] => {
     if (!partName) return [];
-    const matches = histories.filter(h => h.partName.toLowerCase().trim() === partName.toLowerCase().trim());
+    const matches = sourceHistories.filter(h => h.partName.toLowerCase().trim() === partName.toLowerCase().trim());
     return Array.from(new Set(matches.map(h => h.partNumber).filter(Boolean)));
   };
 
@@ -310,6 +343,14 @@ export default function OrderForm({
     }
     if (header.limitDate) saveLimitDateToHistory(header.limitDate);
     if (header.place) savePlaceToHistory(header.place);
+
+    // 船用ローカルデータベースへの入力情報の自動蓄積
+    if (currentShipName) {
+      if (header.captain) saveVesselCaptain(currentShipName, header.captain);
+      if (header.chiefEngineer) saveVesselChiefEngineer(currentShipName, header.chiefEngineer);
+      saveVesselHistories(currentShipName, items, header.date);
+    }
+
     onPreviewClick();
   };
 
@@ -385,48 +426,122 @@ export default function OrderForm({
             </div>
           </div>
 
-          {/* 発注書No. */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
-              <span>発注書No.</span>
-              <span className="text-[10px] text-slate-500 font-normal">（空欄で自動採番）</span>
-            </label>
-            <div className="flex gap-1">
-              <input
-                type="text"
-                placeholder="例: Run2026-B1 (自動分割採番)"
-                className="block w-full rounded-md border-slate-300 px-2 py-1.5 text-xs text-slate-800 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                value={header.orderNo}
-                onChange={e => onHeaderChange({ ...header, orderNo: e.target.value })}
-              />
-              <button
-                type="button"
-                onClick={generateOrderNo}
-                className="px-2 py-1 text-xs font-medium text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-md hover:bg-indigo-100 transition-colors shrink-0"
-                title="船・分類に基づく自動採番サンプルを生成"
-              >
-                例生成
-              </button>
-            </div>
-          </div>
+          {isVesselMode ? (
+            /* 船員用モード: 発注書No. ➔ 船長, 担当者 ➔ 機関長 */
+            <>
+              {/* 船長 (発注書Noの代わりに手入力＆クリックで選択) */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
+                  <span className="flex items-center gap-1 font-bold text-slate-800">
+                    <Ship className="h-3.5 w-3.5 text-emerald-600" />
+                    船長名
+                  </span>
+                  <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                    船専用DB蓄積
+                  </span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="船長名を入力/選択..."
+                  list="vessel-captain-list"
+                  className="block w-full rounded-md border-emerald-300 px-2 py-1.5 text-xs text-slate-800 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 bg-emerald-50/20 font-medium cursor-pointer"
+                  value={header.captain || ''}
+                  onChange={e => {
+                    const val = e.target.value;
+                    onHeaderChange({ ...header, captain: val });
+                    if (currentShipName) saveVesselCaptain(currentShipName, val);
+                  }}
+                  onBlur={e => {
+                    if (currentShipName) saveVesselCaptain(currentShipName, e.target.value);
+                  }}
+                />
+                <datalist id="vessel-captain-list">
+                  {captainHistory.map((opt, i) => (
+                    <option key={`cap-${i}`} value={opt} />
+                  ))}
+                </datalist>
+              </div>
 
-          {/* 担当者 */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-              担当者 <span className="text-rose-500">*</span>
-            </label>
-            <select
-              required
-              className="block w-full rounded-md border-slate-300 px-2.5 py-1.5 text-xs text-slate-800 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 bg-white"
-              value={header.staff}
-              onChange={e => onHeaderChange({ ...header, staff: e.target.value })}
-            >
-              <option value="">-- 担当を選択 --</option>
-              {STAFF_LIST.map(name => (
-                <option key={name} value={name}>{name}</option>
-              ))}
-            </select>
-          </div>
+              {/* 機関長 (担当者の代わりに手入力＆クリックで選択) */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
+                  <span className="flex items-center gap-1 font-bold text-slate-800">
+                    <Ship className="h-3.5 w-3.5 text-emerald-600" />
+                    機関長名
+                  </span>
+                  <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                    船専用DB蓄積
+                  </span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="機関長名を入力/選択..."
+                  list="vessel-chief-engineer-list"
+                  className="block w-full rounded-md border-emerald-300 px-2 py-1.5 text-xs text-slate-800 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 bg-emerald-50/20 font-medium cursor-pointer"
+                  value={header.chiefEngineer || ''}
+                  onChange={e => {
+                    const val = e.target.value;
+                    onHeaderChange({ ...header, chiefEngineer: val });
+                    if (currentShipName) saveVesselChiefEngineer(currentShipName, val);
+                  }}
+                  onBlur={e => {
+                    if (currentShipName) saveVesselChiefEngineer(currentShipName, e.target.value);
+                  }}
+                />
+                <datalist id="vessel-chief-engineer-list">
+                  {chiefEngineerHistory.map((opt, i) => (
+                    <option key={`ce-${i}`} value={opt} />
+                  ))}
+                </datalist>
+              </div>
+            </>
+          ) : (
+            /* 通常陸上モード: 発注書No. & 担当者 */
+            <>
+              {/* 発注書No. */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
+                  <span>発注書No.</span>
+                  <span className="text-[10px] text-slate-500 font-normal">（空欄で自動採番）</span>
+                </label>
+                <div className="flex gap-1">
+                  <input
+                    type="text"
+                    placeholder="例: Run2026-B1 (自動分割採番)"
+                    className="block w-full rounded-md border-slate-300 px-2 py-1.5 text-xs text-slate-800 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                    value={header.orderNo}
+                    onChange={e => onHeaderChange({ ...header, orderNo: e.target.value })}
+                  />
+                  <button
+                    type="button"
+                    onClick={generateOrderNo}
+                    className="px-2 py-1 text-xs font-medium text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-md hover:bg-indigo-100 transition-colors shrink-0"
+                    title="船・分類に基づく自動採番サンプルを生成"
+                  >
+                    例生成
+                  </button>
+                </div>
+              </div>
+
+              {/* 担当者 */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  担当者 <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  required
+                  className="block w-full rounded-md border-slate-300 px-2.5 py-1.5 text-xs text-slate-800 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 bg-white"
+                  value={header.staff}
+                  onChange={e => onHeaderChange({ ...header, staff: e.target.value })}
+                >
+                  <option value="">-- 担当を選択 --</option>
+                  {STAFF_LIST.map(name => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
+                </select>
+              </div>
+            </>
+          )}
 
           {/* 納品期限 & 納品場所 (入力履歴・サジェスト対応) */}
           <div className="grid grid-cols-2 gap-1.5">
@@ -501,7 +616,12 @@ export default function OrderForm({
         <div className="border-b border-slate-100 bg-slate-50/50 px-4 sm:px-6 py-4 flex items-center justify-between flex-wrap gap-3">
           <div>
             <h3 className="font-semibold text-slate-800 text-base">発注部品明細入力</h3>
-            <p className="text-xs text-slate-500 mt-0.5">品名を入力すると、過去の発注履歴（船・機器・メーカー・規格等）を自動分析して補完します。</p>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {isVesselMode
+                ? '品名を入力すると、本船で過去に発注された項目（機器・メーカー・規格等）から自動候補が表示されます。'
+                : '品名を入力すると、過去の発注履歴（船・機器・メーカー・規格等）を自動分析して補完します。'
+              }
+            </p>
           </div>
           <button
             type="button"

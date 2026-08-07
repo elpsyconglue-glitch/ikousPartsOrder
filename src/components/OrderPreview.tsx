@@ -327,8 +327,12 @@ export default function OrderPreview({ header, items, histories, onHistoriesChan
                           <td className="border border-slate-900 px-1.5 py-0.5">{header.date || '-'}</td>
                         </tr>
                         <tr>
-                          <td className="border border-slate-900 bg-slate-50 px-1.5 py-0.5 font-medium">発注書No.</td>
-                          <td className="border border-slate-900 px-1.5 py-0.5 font-mono font-bold">{group.orderNo}</td>
+                          <td className="border border-slate-900 bg-slate-50 px-1.5 py-0.5 font-medium">
+                            {header.captain ? '船長' : '発注書No.'}
+                          </td>
+                          <td className="border border-slate-900 px-1.5 py-0.5 font-bold">
+                            {header.captain || group.orderNo}
+                          </td>
                         </tr>
                       </tbody>
                     </table>
@@ -343,8 +347,10 @@ export default function OrderPreview({ header, items, histories, onHistoriesChan
                       <div className="text-[10px]">TEL： 0834-27-6551</div>
                       <div className="text-[10px]">FAX： 0834-27-6545</div>
                       <div className="font-medium flex items-center pt-0.5 border-t border-dashed border-slate-200">
-                        <span>担当：</span>
-                        <span className="text-xs font-bold border-b border-slate-900 px-1 flex-1">{header.staff || '大野隆太'}</span>
+                        <span>{header.chiefEngineer ? '機関長：' : '担当：'}</span>
+                        <span className="text-xs font-bold border-b border-slate-900 px-1 flex-1">
+                          {header.chiefEngineer || header.staff || '大野隆太'}
+                        </span>
                       </div>
                     </div>
                   </div>
