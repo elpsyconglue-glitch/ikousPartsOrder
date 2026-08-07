@@ -282,6 +282,16 @@ export function exportPartHistoriesToCsv(histories: PartHistory[]): string {
   return Papa.unparse(exportData);
 }
 
+// サイト上での発注・手動登録実績データ（絶対に消去・上書き保護対象）か判定する関数
+export function isUserCreatedRecord(item: PartHistory): boolean {
+  if (!item) return false;
+  if (item.isUserCreated) return true;
+  if (item.id.startsWith('auto-') || item.id.startsWith('manual-') || item.id.startsWith('user-')) return true;
+  if (item.orderNo && item.orderNo.trim() !== '') return true;
+  if (item.orderDate && item.orderDate.trim() !== '') return true;
+  return false;
+}
+
 // 発注作成時にアイテムを履歴データベース（localStorage）に追加・更新保存する
 export function registerNewItemsToHistories(
   currentHistories: PartHistory[],
@@ -316,14 +326,15 @@ export function registerNewItemsToHistories(
     if (existingSameOrderIndex >= 0) {
       // 既に同じ発注書No・品名で登録済みの場合はその情報を更新（重複追加防止）
       const existing = updatedHistories[existingSameOrderIndex];
-      const updatedItem = {
+      const updatedItem: PartHistory = {
         ...existing,
         unitPrice: unitPriceNum > 0 ? unitPriceNum : existing.unitPrice,
         quantity: quantityNum,
         category: orderCategory,
         orderDate: headerOrderDate || existing.orderDate || new Date().toISOString().split('T')[0],
         orderNo: targetOrderNo,
-        remark: item.remark || existing.remark
+        remark: item.remark || existing.remark,
+        isUserCreated: true
       };
       updatedHistories[existingSameOrderIndex] = updatedItem;
       savePartHistoryToFirestore(updatedItem);
@@ -343,7 +354,8 @@ export function registerNewItemsToHistories(
         quantity: quantityNum,
         orderDate: headerOrderDate || new Date().toISOString().split('T')[0],
         orderNo: targetOrderNo,
-        remark: item.remark || ''
+        remark: item.remark || '',
+        isUserCreated: true
       };
       updatedHistories = [newHistory, ...updatedHistories];
       savePartHistoryToFirestore(newHistory);
@@ -352,6 +364,81 @@ export function registerNewItemsToHistories(
 
   savePartHistories(updatedHistories);
   return updatedHistories;
+}
+
+// 旧マスターDBを新ファイルに置換する際、サイト上の発注書実績・手動追加データを100%保護して結合する
+export function replaceMasterDatabase(
+  currentHistories: PartHistory[],
+  newMasterItems: PartHistory[]
+): { updatedHistories: PartHistory[]; preservedUserRecordsCount: number; oldMasterRemovedCount: number } {
+  // ユーザーが発注・追加した実績データを抽出（絶対削除不可保護）
+  const userRecords = currentHistories.filter(h => isUserCreatedRecord(h));
+  const oldMasterRecords = currentHistories.filter(h => !isUserCreatedRecord(h));
+
+  const map = new Map<string, PartHistory>();
+
+  // 新マスターデータを追加
+  newMasterItems.forEach(item => {
+    if (item && item.id) {
+      map.set(item.id, { ...item, isUserCreated: false });
+    }
+  });
+
+  // ユーザー実績データを最優先で結合・保持
+  userRecords.forEach(item => {
+    if (item && item.id) {
+      map.set(item.id, { ...item, isUserCreated: true });
+    }
+  });
+
+  const updatedHistories = Array.from(map.values());
+  savePartHistories(updatedHistories);
+
+  return {
+    updatedHistories,
+    preservedUserRecordsCount: userRecords.length,
+    oldMasterRemovedCount: oldMasterRecords.length
+  };
+}
+
+// クラウド（Firestore）上のマスターデータを安全に置換（ユーザー実績は全保護・維持）
+export async function replaceMasterDatabaseInFirestore(
+  currentHistories: PartHistory[],
+  newMasterItems: PartHistory[],
+  onProgress?: (current: number, total: number) => void
+): Promise<{ preservedCount: number; newMasterCount: number }> {
+  const userRecords = currentHistories.filter(h => isUserCreatedRecord(h));
+  const oldMasterRecords = currentHistories.filter(h => !isUserCreatedRecord(h));
+
+  // 1. 古いマスターデータのみ Firestore から削除
+  const chunkSize = 400;
+  for (let i = 0; i < oldMasterRecords.length; i += chunkSize) {
+    const chunk = oldMasterRecords.slice(i, i + chunkSize);
+    const batch = writeBatch(db);
+    for (const item of chunk) {
+      batch.delete(doc(db, 'part_histories', item.id));
+    }
+    try {
+      await batch.commit();
+    } catch (e) {
+      console.warn('Old master delete batch error:', e);
+    }
+  }
+
+  // 2. 新マスターデータを Firestore に書き込み
+  await syncAllHistoriesToFirestore(newMasterItems, onProgress);
+
+  // 3. ユーザー実績データを再同期（保護の二重化）
+  if (userRecords.length > 0) {
+    await syncAllHistoriesToFirestore(userRecords);
+  }
+
+  const { updatedHistories } = replaceMasterDatabase(currentHistories, newMasterItems);
+
+  return {
+    preservedCount: userRecords.length,
+    newMasterCount: newMasterItems.length
+  };
 }
 
 // 予算管理画面等で、特定履歴の単価・金額・発注書番号を後から更新し、同じ品名・部品番号のマスター単価にも次回反映されるよう同期する

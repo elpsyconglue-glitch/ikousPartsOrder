@@ -4,7 +4,6 @@ import { DEFAULT_SHIP_NAMES } from '../defaultData';
 import { Plus, Trash2, Settings, HelpCircle, ChevronDown, ChevronUp, RefreshCw, FileText, Lock, AlertCircle, Ship } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
 
-import { generateOrderNo as createAutoOrderNo } from '../utils/orderNoHelper';
 import { 
   getVesselCaptains, 
   saveVesselCaptain, 
@@ -185,8 +184,58 @@ export default function OrderForm({
     }
   };
 
+  // 船名の変更：ヘッダーおよび全アイテムの船名を一括更新
+  const handleShipNameChange = (newShipName: string) => {
+    onHeaderChange({ ...header, shipName: newShipName });
+    const updated = items.map(item => ({
+      ...item,
+      shipName: newShipName
+    }));
+    onItemsChange(updated);
+  };
+  const sanitizeValue = (val: string | undefined | null): string => {
+    if (!val) return '';
+    const trimmed = val.trim();
+    if (
+      trimmed === '未指定' ||
+      trimmed === '-' ||
+      trimmed === 'ー' ||
+      trimmed === '（未指定）' ||
+      trimmed === 'メーカー未指定'
+    ) {
+      return '';
+    }
+    return trimmed;
+  };
+
+  // フォーカス時に「未指定」や「-」であれば全消去、それ以外の文字なら全選択してストレスなく直接上書きできるようにする
+  const handleFocusAutoSelect = (e: React.FocusEvent<HTMLInputElement>) => {
+    const val = e.target.value.trim();
+    if (
+      val === '未指定' ||
+      val === '-' ||
+      val === 'ー' ||
+      val === '（未指定）' ||
+      val === 'メーカー未指定'
+    ) {
+      e.target.value = '';
+    } else {
+      e.target.select();
+    }
+  };
+
   // 各セルの値変更
   const handleCellChange = (id: string, field: keyof OrderItem, value: any) => {
+    // 船名の変更の場合：一回の注文で船名は統一されるため、全行の船名を一括更新
+    if (field === 'shipName') {
+      const updated = items.map(item => ({
+        ...item,
+        shipName: value
+      }));
+      onItemsChange(updated);
+      return;
+    }
+
     const updated = items.map(item => {
       if (item.id === id) {
         const updatedItem = { ...item, [field]: value };
@@ -213,6 +262,9 @@ export default function OrderForm({
       h => h.partName.toLowerCase().trim() === partName.toLowerCase().trim()
     );
 
+    // 一度の注文で統一されている現在の船名を把握（上書き防止）
+    const currentShip = items.find(i => i.shipName)?.shipName || assignedShip || '';
+
     const updated = items.map((item): OrderItem => {
       if (item.id === id) {
         const baseItem = { ...item, partName };
@@ -230,13 +282,14 @@ export default function OrderForm({
           const match = matchingHistories[0];
           return {
             ...baseItem,
-            partNumber: match.partNumber,
-            unit: match.unit || '個',
+            partNumber: sanitizeValue(match.partNumber),
+            unit: sanitizeValue(match.unit) || '個',
             unitPrice: match.unitPrice ?? '',
-            shipName: match.shipName,
-            equipmentName: match.equipmentName,
-            manufacturer: match.manufacturer,
-            model: match.model
+            // 船名は既に設定されている船名を絶対優先（変わらないように保持）
+            shipName: currentShip || sanitizeValue(match.shipName),
+            equipmentName: sanitizeValue(match.equipmentName) || item.equipmentName,
+            manufacturer: sanitizeValue(match.manufacturer) || item.manufacturer,
+            model: sanitizeValue(match.model) || item.model
           };
         } else if (partNumbers.length > 1) {
           // 部品番号の候補が複数ある場合
@@ -244,12 +297,13 @@ export default function OrderForm({
           return {
             ...baseItem,
             partNumber: '', // ユーザーにドロップダウンから選択してもらう
-            unit: firstMatch.unit || '個',
+            unit: sanitizeValue(firstMatch.unit) || '個',
             unitPrice: firstMatch.unitPrice ?? '',
-            shipName: firstMatch.shipName,
-            equipmentName: firstMatch.equipmentName,
-            manufacturer: firstMatch.manufacturer,
-            model: firstMatch.model
+            // 船名は既に設定されている船名を絶対優先（変わらないように保持）
+            shipName: currentShip || sanitizeValue(firstMatch.shipName),
+            equipmentName: sanitizeValue(firstMatch.equipmentName) || item.equipmentName,
+            manufacturer: sanitizeValue(firstMatch.manufacturer) || item.manufacturer,
+            model: sanitizeValue(firstMatch.model) || item.model
           };
         }
 
@@ -268,6 +322,8 @@ export default function OrderForm({
     const currentItem = items.find(item => item.id === id);
     if (!currentItem) return;
 
+    const currentShip = items.find(i => i.shipName)?.shipName || assignedShip || '';
+
     // 品名と部品番号が両方一致する履歴レコードを検索
     const match = sourceHistories.find(
       h => h.partName.toLowerCase().trim() === currentItem.partName.toLowerCase().trim() &&
@@ -279,13 +335,13 @@ export default function OrderForm({
         if (item.id === id) {
           return {
             ...item,
-            partNumber,
-            unit: match.unit || item.unit || '個',
+            partNumber: sanitizeValue(partNumber),
+            unit: sanitizeValue(match.unit) || item.unit || '個',
             unitPrice: match.unitPrice ?? item.unitPrice ?? '',
-            shipName: match.shipName,
-            equipmentName: match.equipmentName,
-            manufacturer: match.manufacturer,
-            model: match.model
+            shipName: currentShip || sanitizeValue(match.shipName) || item.shipName,
+            equipmentName: sanitizeValue(match.equipmentName) || item.equipmentName,
+            manufacturer: sanitizeValue(match.manufacturer) || item.manufacturer,
+            model: sanitizeValue(match.model) || item.model
           };
         }
         return item;
@@ -293,7 +349,7 @@ export default function OrderForm({
       onItemsChange(updated);
     } else {
       // マッチがなくても、手動入力された部品番号を反映
-      handleCellChange(id, 'partNumber', partNumber);
+      handleCellChange(id, 'partNumber', sanitizeValue(partNumber));
     }
   };
 
@@ -325,15 +381,6 @@ export default function OrderForm({
   const setTodayDate = () => {
     const today = new Date().toISOString().slice(0, 10);
     onHeaderChange({ ...header, date: today });
-  };
-
-  // 発注書Noの自動生成例セット
-  const generateOrderNo = () => {
-    const firstItem = items[0];
-    const ship = firstItem?.shipName || '未指定';
-    const cat = firstItem?.orderCategory || header.orderCategory || '部品';
-    const autoNo = createAutoOrderNo(histories, ship, cat, header.date, 0);
-    onHeaderChange({ ...header, orderNo: autoNo });
   };
 
   const handlePreviewClickWithSave = () => {
@@ -496,31 +543,32 @@ export default function OrderForm({
               </div>
             </>
           ) : (
-            /* 通常陸上モード: 発注書No. & 担当者 */
+            /* 通常陸上モード: 船名 & 担当者 */
             <>
-              {/* 発注書No. */}
+              {/* 船名 */}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
-                  <span>発注書No.</span>
-                  <span className="text-[10px] text-slate-500 font-normal">（空欄で自動採番）</span>
+                  <span className="flex items-center gap-1 font-bold text-slate-800">
+                    <Ship className="h-3.5 w-3.5 text-indigo-600" />
+                    船名 <span className="text-rose-500">*</span>
+                  </span>
+                  <span className="text-[10px] text-indigo-600 font-semibold">(選択/手入力)</span>
                 </label>
-                <div className="flex gap-1">
-                  <input
-                    type="text"
-                    placeholder="例: Run2026-B1 (自動分割採番)"
-                    className="block w-full rounded-md border-slate-300 px-2 py-1.5 text-xs text-slate-800 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                    value={header.orderNo}
-                    onChange={e => onHeaderChange({ ...header, orderNo: e.target.value })}
-                  />
-                  <button
-                    type="button"
-                    onClick={generateOrderNo}
-                    className="px-2 py-1 text-xs font-medium text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-md hover:bg-indigo-100 transition-colors shrink-0"
-                    title="船・分類に基づく自動採番サンプルを生成"
-                  >
-                    例生成
-                  </button>
-                </div>
+                <input
+                  type="text"
+                  required
+                  placeholder="船名を入力/選択..."
+                  list="header-ship-names-list"
+                  className="block w-full rounded-md border-slate-300 px-2.5 py-1.5 text-xs font-bold text-slate-800 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 bg-white"
+                  value={header.shipName ?? (items[0]?.shipName || currentShipName || '')}
+                  onChange={e => handleShipNameChange(e.target.value)}
+                  onFocus={handleFocusAutoSelect}
+                />
+                <datalist id="header-ship-names-list">
+                  {shipNames.map(name => (
+                    <option key={name} value={name} />
+                  ))}
+                </datalist>
               </div>
 
               {/* 担当者 */}
@@ -690,12 +738,13 @@ export default function OrderForm({
                     type="text"
                     required
                     placeholder="例: インペラ, Oリング..."
-                    className="block w-full rounded-md border-slate-300 px-3 py-2 text-sm text-slate-800 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 bg-white"
+                    className="block w-full rounded-md border-slate-300 px-3 py-2 text-sm text-slate-800 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 bg-white font-medium"
                     value={item.partName}
                     onChange={e => {
                       handleCellChange(item.id, 'partName', e.target.value);
                       handlePartNameSelect(item.id, e.target.value);
                     }}
+                    onFocus={handleFocusAutoSelect}
                     list={`mobile-part-names-${item.id}`}
                   />
                   <datalist id={`mobile-part-names-${item.id}`}>
@@ -716,6 +765,7 @@ export default function OrderForm({
                     className="block w-full rounded-md border-slate-300 px-3 py-2 text-sm text-slate-800 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 bg-white"
                     value={item.partNumber}
                     onChange={e => handleCellChange(item.id, 'partNumber', e.target.value)}
+                    onFocus={handleFocusAutoSelect}
                     list={`mobile-part-numbers-${item.id}`}
                   />
                   <datalist id={`mobile-part-numbers-${item.id}`}>
@@ -781,7 +831,7 @@ export default function OrderForm({
                 {/* 詳細情報 (常時表示) */}
                 <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-3 text-xs">
                   <div className="text-[11px] font-bold text-indigo-900 border-b border-slate-200 pb-1 flex items-center justify-between">
-                    <span>📋 機器名・型式・メーカー・船名</span>
+                    <span>📋 機器名・型式・メーカー</span>
                     <span className="text-[10px] text-slate-500 font-normal">常時入力</span>
                   </div>
 
@@ -794,6 +844,7 @@ export default function OrderForm({
                       className="w-full rounded border-slate-300 p-2 text-xs bg-white"
                       value={item.equipmentName}
                       onChange={e => handleCellChange(item.id, 'equipmentName', e.target.value)}
+                      onFocus={handleFocusAutoSelect}
                     />
                   </div>
 
@@ -806,6 +857,7 @@ export default function OrderForm({
                       className="w-full rounded border-slate-300 p-2 text-xs bg-white"
                       value={item.model}
                       onChange={e => handleCellChange(item.id, 'model', e.target.value)}
+                      onFocus={handleFocusAutoSelect}
                     />
                   </div>
 
@@ -818,48 +870,8 @@ export default function OrderForm({
                       className="w-full rounded border-slate-300 p-2 text-xs bg-white font-semibold"
                       value={item.manufacturer}
                       onChange={e => handleCellChange(item.id, 'manufacturer', e.target.value)}
+                      onFocus={handleFocusAutoSelect}
                     />
-                  </div>
-
-                  {/* 4. 船名 */}
-                  <div>
-                    <label className="block font-bold text-slate-600 mb-1">船名</label>
-                    {assignedShip ? (
-                      <div className="px-3 py-2 bg-emerald-50 border border-emerald-300 rounded text-xs font-bold text-emerald-950 flex items-center gap-1.5">
-                        <Ship className="h-4 w-4 text-emerald-700 shrink-0" />
-                        <span>🚢 【{assignedShip}】 (所属船固定)</span>
-                      </div>
-                    ) : (
-                      <>
-                        <select
-                          className="w-full rounded border-slate-300 p-2 text-xs bg-white font-medium"
-                          value={shipNames.includes(item.shipName) ? item.shipName : (item.shipName ? 'OTHER' : '')}
-                          onChange={e => {
-                            const val = e.target.value;
-                            if (val === 'OTHER') {
-                              if (shipNames.includes(item.shipName)) handleCellChange(item.id, 'shipName', '');
-                            } else {
-                              handleCellChange(item.id, 'shipName', val);
-                            }
-                          }}
-                        >
-                          <option value="">-- 船名を選択 --</option>
-                          {shipNames.map(name => (
-                            <option key={name} value={name}>{name}</option>
-                          ))}
-                          <option value="OTHER">その他（直接手入力）</option>
-                        </select>
-                        {(!shipNames.includes(item.shipName) || item.shipName === '') && (
-                          <input
-                            type="text"
-                            placeholder="船名を直接入力..."
-                            className="w-full rounded border-indigo-300 p-2 text-xs bg-white mt-1"
-                            value={item.shipName}
-                            onChange={e => handleCellChange(item.id, 'shipName', e.target.value)}
-                          />
-                        )}
-                      </>
-                    )}
                   </div>
                 </div>
               </div>
@@ -953,7 +965,10 @@ export default function OrderForm({
                               handleCellChange(item.id, 'partName', e.target.value);
                               handlePartNameSelect(item.id, e.target.value);
                             }}
-                            onFocus={() => setFocusedRowId(item.id)}
+                            onFocus={(e) => {
+                              handleFocusAutoSelect(e);
+                              setFocusedRowId(item.id);
+                            }}
                             list={`part-names-${item.id}`}
                           />
                           <datalist id={`part-names-${item.id}`}>
@@ -983,6 +998,10 @@ export default function OrderForm({
                                 handlePartNumberSelect(item.id, val);
                               }
                             }}
+                            onFocus={(e) => {
+                              handleFocusAutoSelect(e);
+                              setFocusedRowId(item.id);
+                            }}
                             list={`part-numbers-${item.id}`}
                           />
                           <datalist id={`part-numbers-${item.id}`}>
@@ -1006,6 +1025,10 @@ export default function OrderForm({
                           className="block w-full rounded-md border-slate-300 px-2 py-1 text-sm text-slate-800 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-right bg-white"
                           value={item.quantity}
                           onChange={e => handleCellChange(item.id, 'quantity', e.target.value)}
+                          onFocus={(e) => {
+                            handleFocusAutoSelect(e);
+                            setFocusedRowId(item.id);
+                          }}
                         />
                       </td>
 
@@ -1018,6 +1041,10 @@ export default function OrderForm({
                             className="block w-full rounded-md border-slate-300 px-1 py-1 text-sm font-semibold text-center text-slate-800 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 bg-white"
                             value={item.unit}
                             onChange={e => handleCellChange(item.id, 'unit', e.target.value)}
+                            onFocus={(e) => {
+                              handleFocusAutoSelect(e);
+                              setFocusedRowId(item.id);
+                            }}
                             list={`units-${item.id}`}
                           />
                           <datalist id={`units-${item.id}`}>
@@ -1037,6 +1064,10 @@ export default function OrderForm({
                           className="block w-full rounded-md border-slate-300 px-2 py-1 text-sm text-slate-800 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-right bg-white"
                           value={item.unitPrice}
                           onChange={e => handleCellChange(item.id, 'unitPrice', e.target.value)}
+                          onFocus={(e) => {
+                            handleFocusAutoSelect(e);
+                            setFocusedRowId(item.id);
+                          }}
                         />
                       </td>
 
@@ -1053,6 +1084,10 @@ export default function OrderForm({
                           className="block w-full rounded-md border-slate-300 px-2 py-1 text-sm text-slate-800 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 bg-white"
                           value={item.remark}
                           onChange={e => handleCellChange(item.id, 'remark', e.target.value)}
+                          onFocus={(e) => {
+                            handleFocusAutoSelect(e);
+                            setFocusedRowId(item.id);
+                          }}
                         />
                       </td>
 
@@ -1069,12 +1104,12 @@ export default function OrderForm({
                       </td>
                     </tr>
 
-                    {/* 2段目サブ入力行 (機器名・型式・メーカー・船名) - メイン行と一体化 */}
+                    {/* 2段目サブ入力行 (機器名・型式・メーカー) - メイン行と一体化 */}
                     <tr className={`${rowBgClass} border-b-2 border-slate-300 transition-colors`}>
                       <td className="px-2 py-2 text-center text-slate-300 font-mono text-xs select-none">
                       </td>
                       <td colSpan={10} className="px-3 pb-3 pt-0.5">
-                        <div className="bg-slate-100/70 p-2.5 rounded-lg border border-slate-200 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                        <div className="bg-slate-100/70 p-2.5 rounded-lg border border-slate-200 grid grid-cols-1 sm:grid-cols-3 gap-3">
                           {/* 1. 機器名 */}
                           <div>
                             <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
@@ -1086,6 +1121,10 @@ export default function OrderForm({
                               className="block w-full rounded border-slate-300 px-2.5 py-1 text-xs text-slate-800 bg-white shadow-sm focus:ring-1 focus:ring-indigo-500"
                               value={item.equipmentName}
                               onChange={e => handleCellChange(item.id, 'equipmentName', e.target.value)}
+                              onFocus={(e) => {
+                                handleFocusAutoSelect(e);
+                                setFocusedRowId(item.id);
+                              }}
                               list={`equipment-names-${item.id}`}
                             />
                             <datalist id={`equipment-names-${item.id}`}>
@@ -1106,6 +1145,10 @@ export default function OrderForm({
                               className="block w-full rounded border-slate-300 px-2.5 py-1 text-xs text-slate-800 bg-white shadow-sm focus:ring-1 focus:ring-indigo-500"
                               value={item.model}
                               onChange={e => handleCellChange(item.id, 'model', e.target.value)}
+                              onFocus={(e) => {
+                                handleFocusAutoSelect(e);
+                                setFocusedRowId(item.id);
+                              }}
                               list={`model-names-${item.id}`}
                             />
                             <datalist id={`model-names-${item.id}`}>
@@ -1126,6 +1169,10 @@ export default function OrderForm({
                               className="block w-full rounded border-slate-300 px-2.5 py-1 text-xs text-slate-800 bg-white shadow-sm focus:ring-1 focus:ring-indigo-500 font-medium"
                               value={item.manufacturer}
                               onChange={e => handleCellChange(item.id, 'manufacturer', e.target.value)}
+                              onFocus={(e) => {
+                                handleFocusAutoSelect(e);
+                                setFocusedRowId(item.id);
+                              }}
                               list={`manufacturer-names-${item.id}`}
                             />
                             <datalist id={`manufacturer-names-${item.id}`}>
@@ -1133,54 +1180,6 @@ export default function OrderForm({
                                 <option key={name} value={name} />
                               ))}
                             </datalist>
-                          </div>
-
-                          {/* 4. 船名 */}
-                          <div>
-                            <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
-                              船名 {assignedShip ? <span className="text-emerald-700 font-bold">(所属船固定)</span> : <span className="text-indigo-600 font-normal">(選択/手入力)</span>}
-                            </label>
-                            <div>
-                              {assignedShip ? (
-                                <div className="px-2.5 py-1 bg-emerald-50 border border-emerald-300 rounded text-xs font-bold text-emerald-950 flex items-center gap-1.5">
-                                  <Ship className="h-3.5 w-3.5 text-emerald-700 shrink-0" />
-                                  <span>🚢 【{assignedShip}】</span>
-                                </div>
-                              ) : (
-                                <>
-                                  <select
-                                    className="block w-full rounded border-slate-300 px-2.5 py-1 text-xs text-slate-800 bg-white font-medium shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 cursor-pointer"
-                                    value={shipNames.includes(item.shipName) ? item.shipName : (item.shipName ? 'OTHER' : '')}
-                                    onChange={e => {
-                                      const val = e.target.value;
-                                      if (val === 'OTHER') {
-                                        if (shipNames.includes(item.shipName)) {
-                                          handleCellChange(item.id, 'shipName', '');
-                                        }
-                                      } else {
-                                        handleCellChange(item.id, 'shipName', val);
-                                      }
-                                    }}
-                                  >
-                                    <option value="">-- 船名を選択 --</option>
-                                    {shipNames.map(name => (
-                                      <option key={name} value={name}>{name}</option>
-                                    ))}
-                                    <option value="OTHER">✏️ その他（直接手入力）</option>
-                                  </select>
-
-                                  {(!shipNames.includes(item.shipName) || item.shipName === '') && (
-                                    <input
-                                      type="text"
-                                      placeholder="船名を直接入力..."
-                                      className="block w-full rounded border-indigo-300 px-2.5 py-1 text-xs text-slate-800 bg-indigo-50/20 shadow-sm focus:ring-1 focus:ring-indigo-500 mt-1"
-                                      value={item.shipName}
-                                      onChange={e => handleCellChange(item.id, 'shipName', e.target.value)}
-                                    />
-                                  )}
-                                </>
-                              )}
-                            </div>
                           </div>
                         </div>
                       </td>

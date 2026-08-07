@@ -25,6 +25,7 @@ export interface PartHistory {
   orderDate?: string;     // 発注年月日 (YYYY-MM-DD)
   orderNo?: string;       // 発注番号
   remark?: string;        // 備考
+  isUserCreated?: boolean; // サイト上での発注作成・手動追加実績フラグ (マスター置換時も削除保護)
 }
 
 export interface OrderItem {
@@ -65,6 +66,7 @@ export interface OrderHeader {
   date: string;           // 発注年月日
   orderNo: string;        // 発注書No
   staff: string;          // 担当 (大野隆太, 伊坂博樹, 村上愛子, 三輪大真)
+  shipName?: string;      // 船名 (基本情報一括設定用)
   captain?: string;       // 船長 (船員モード用)
   chiefEngineer?: string; // 機関長 (船員モード用)
   limitDate: string;      // 納品期限

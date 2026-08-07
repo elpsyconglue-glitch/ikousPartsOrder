@@ -351,7 +351,8 @@ export default function BudgetManager({
       category: selectedCategory,
       orderDate: orderDateClean,
       orderNo: orderNoClean,
-      remark: item.remark || ''
+      remark: item.remark || '',
+      isUserCreated: true
     }));
 
     const updated = [...createdHistories, ...histories];

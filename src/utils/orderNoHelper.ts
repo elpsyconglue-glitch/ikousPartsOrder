@@ -59,3 +59,4 @@ export function generateOrderNo(
   return `${prefix}${nextNum}`;
 }
 
+

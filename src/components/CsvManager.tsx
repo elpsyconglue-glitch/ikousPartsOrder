@@ -6,9 +6,12 @@ import {
   savePartHistories, 
   exportPartHistoriesToExcel, 
   exportPartHistoriesToCsv,
-  syncAllHistoriesToFirestore
+  syncAllHistoriesToFirestore,
+  replaceMasterDatabaseInFirestore,
+  isUserCreatedRecord,
+  getPartHistories
 } from '../utils/csvHelper';
-import { Upload, Download, RotateCcw, Database, AlertCircle, CheckCircle, FileSpreadsheet, FileText, CloudUpload, Loader2 } from 'lucide-react';
+import { Upload, Download, RotateCcw, Database, AlertCircle, CheckCircle, FileSpreadsheet, FileText, CloudUpload, Loader2, ShieldCheck } from 'lucide-react';
 
 interface CsvManagerProps {
   histories: PartHistory[];
@@ -79,8 +82,23 @@ export default function CsvManager({ histories, onHistoriesChange }: CsvManagerP
 
       let updatedHistories: PartHistory[] = [];
       if (importMode === 'replace') {
-        updatedHistories = parsed;
-        setStatus({ type: 'success', message: `データベースを上書き登録しました。合計${parsed.length}件のデータを取り込みました。` });
+        setIsSyncingCloud(true);
+        setStatus({ type: 'info', message: '旧マスターDBの置換と新DBの同期処理中...（サイト発注実績データは自動保護されています）' });
+        
+        const res = await replaceMasterDatabaseInFirestore(histories, parsed, (current, total) => {
+          setSyncProgress({ current, total });
+        });
+        
+        const freshHistories = getPartHistories();
+        onHistoriesChange(freshHistories);
+        setIsSyncingCloud(false);
+        setSyncProgress(null);
+
+        setStatus({ 
+          type: 'success', 
+          message: `【マスターDB置換完了】旧マスターDBを新DB (${parsed.length}件) に入れ替えました。WEB上の発注書実績・手動追加データ (${res.preservedCount}件) は全保護されそのまま維持されています！` 
+        });
+        return;
       } else {
         // 重複排除（同じ船名、機器名、品名、部品番号の組み合わせがあればスキップ）
         const existingKeys = new Set(histories.map(h => `${h.shipName}-${h.equipmentName}-${h.partName}-${h.partNumber}`));
@@ -186,28 +204,41 @@ export default function CsvManager({ histories, onHistoriesChange }: CsvManagerP
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {/* 左・中央：Excel / CSV ドラッグ＆ドロップ */}
           <div className="md:col-span-2">
-            <div className="flex items-center gap-4 mb-3">
-              <label className="text-xs font-semibold text-slate-700">インポート設定:</label>
-              <div className="flex items-center gap-4">
-                <label className="inline-flex items-center text-xs text-slate-600 cursor-pointer">
-                  <input
-                    type="radio"
-                    className="mr-1.5 h-3.5 w-3.5 text-indigo-600 border-slate-300 focus:ring-indigo-500"
-                    checked={importMode === 'append'}
-                    onChange={() => setImportMode('append')}
-                  />
-                  既存データに追加する
-                </label>
-                <label className="inline-flex items-center text-xs text-slate-600 cursor-pointer">
-                  <input
-                    type="radio"
-                    className="mr-1.5 h-3.5 w-3.5 text-indigo-600 border-slate-300 focus:ring-indigo-500"
-                    checked={importMode === 'replace'}
-                    onChange={() => setImportMode('replace')}
-                  />
-                  既存データを上書き（全消去して置換）
-                </label>
+            <div className="space-y-2 mb-3">
+              <div className="flex items-center gap-4 flex-wrap">
+                <label className="text-xs font-bold text-slate-700">インポート設定:</label>
+                <div className="flex items-center gap-4 flex-wrap">
+                  <label className="inline-flex items-center text-xs text-slate-700 font-medium cursor-pointer">
+                    <input
+                      type="radio"
+                      className="mr-1.5 h-3.5 w-3.5 text-indigo-600 border-slate-300 focus:ring-indigo-500"
+                      checked={importMode === 'append'}
+                      onChange={() => setImportMode('append')}
+                    />
+                    既存マスターに追加（重複排除）
+                  </label>
+                  <label className="inline-flex items-center text-xs text-indigo-900 font-bold cursor-pointer bg-indigo-50/80 px-2 py-0.5 rounded border border-indigo-200">
+                    <input
+                      type="radio"
+                      className="mr-1.5 h-3.5 w-3.5 text-indigo-600 border-slate-300 focus:ring-indigo-500"
+                      checked={importMode === 'replace'}
+                      onChange={() => setImportMode('replace')}
+                    />
+                    旧マスターDBのみ置換（※WEB上の発注書・手動実績データは全保護）
+                  </label>
+                </div>
               </div>
+
+              {importMode === 'replace' && (
+                <div className="p-2.5 bg-emerald-50 border border-emerald-300 rounded-lg text-[11px] font-bold text-emerald-950 flex items-start gap-2 shadow-sm">
+                  <ShieldCheck className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
+                  <div className="leading-snug">
+                    <span className="text-emerald-900 font-black">【実績データ保護機能 有効】</span><br />
+                    参考用過去マスターデータ（CSV由来）のみを新ファイルへ置き換えます。<br />
+                    WEB上で実際に作成・保存された【発注書データ】および【手動追加実績】（計 {histories.filter(h => isUserCreatedRecord(h)).length} 件）は自動検出・全保護され、絶対に削除・損失することはありません。
+                  </div>
+                </div>
+              )}
             </div>
 
             <div
